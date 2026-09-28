@@ -1,8 +1,17 @@
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
 import { loadBook } from './lib/epub.mjs';
 import { Inkstone, InkstoneError, sleep } from './lib/inkstone.mjs';
+
+function listFiles(dir, out = []) {
+  for (const name of readdirSync(dir)) {
+    const full = join(dir, name);
+    if (statSync(full).isDirectory()) listFiles(full, out);
+    else out.push(relative(dir, full));
+  }
+  return out;
+}
 
 const log = (msg) => console.log(`[publish] ${msg}`);
 const warn = (msg) => console.warn(`[publish] ${msg}`);
@@ -72,7 +81,13 @@ function setOutput(name, value) {
 }
 
 async function main() {
-  if (!existsSync(EPUB_PATH)) throw new Error(`EPUB not found at ${EPUB_PATH}`);
+  if (!existsSync(EPUB_PATH)) {
+    const found = existsSync(ASSETS_DIR) ? listFiles(ASSETS_DIR).slice(0, 12) : [];
+    throw new Error(
+      `EPUB not found at ${EPUB_PATH}.` +
+        (found.length ? ` Files actually unpacked: ${found.join(', ')}` : ` Nothing found under ${ASSETS_DIR}.`),
+    );
+  }
   const book = loadBook(EPUB_PATH);
   log(`book has ${book.total} chapters`);
   log(`range inputs: start=${START_INPUT || 'auto'} end=${END_INPUT || 'auto'} max=${MAX_CHAPTERS} delay=${DELAY_SECONDS}s`);

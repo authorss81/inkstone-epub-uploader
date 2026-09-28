@@ -24,7 +24,7 @@ plaintext only ever exists in the git-ignored `work/` directory while a run is i
    re-encrypts `work/` back into `vault/` and commits it with the repo's own `GITHUB_TOKEN`.
 7. Resume is kept in three independent places, so a killed runner never republishes:
    - the chapter count Inkstone itself reports, re-read on every run (authoritative),
-   - `vault/state.json.enc`,
+   - `vault/state/state.json.enc`,
    - the chapter range the run was given.
 8. Writes a `finished` output and dispatches itself with `gh workflow run` while work remains.
    `workflow_dispatch` is the one event a `GITHUB_TOKEN` may trigger, so self-handoff works.
@@ -103,7 +103,7 @@ anywhere in a file makes it fail to decrypt rather than hand back garbage. Files
 | Vault file | Written by | Contents |
 | --- | --- | --- |
 | `book.epub.enc` | you, once | the source EPUB |
-| `state.json.enc` | the workflow | resume pointer and recent publish log |
+| `state/state.json.enc` | the workflow | resume pointer and recent publish log |
 | `session/storage-state.json.enc` | the workflow | Playwright cookie jar for Inkstone |
 
 `work/` is git-ignored, and the workflow only ever runs `git add vault`, so plaintext cannot be

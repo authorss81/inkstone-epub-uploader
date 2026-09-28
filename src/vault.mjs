@@ -29,7 +29,7 @@ export function encrypt(plain, encPath) {
   return encPath;
 }
 
-export function decrypt(encPath, plainPath) {
+export function decryptToBuffer(encPath) {
   const blob = readFileSync(encPath);
   if (!blob.subarray(0, MAGIC.length).equals(MAGIC)) {
     throw new Error(`${encPath} is not an Inkstone vault file`);
@@ -43,8 +43,11 @@ export function decrypt(encPath, plainPath) {
   const key = scryptSync(passphrase(), salt, KEY_BYTES, SCRYPT);
   const decipher = createDecipheriv('aes-256-gcm', key, iv);
   decipher.setAuthTag(tag);
-  const plain = Buffer.concat([decipher.update(body), decipher.final()]);
+  return Buffer.concat([decipher.update(body), decipher.final()]);
+}
 
+export function decrypt(encPath, plainPath) {
+  const plain = decryptToBuffer(encPath);
   mkdirSync(dirname(plainPath), { recursive: true });
   writeFileSync(plainPath, plain);
   return plainPath;
@@ -77,22 +80,28 @@ function unpack() {
 }
 
 // Walk both sides: files already in the vault, plus anything new that appeared in work/.
+// Compare plaintext, not ciphertext: AES-GCM uses a random IV, so re-encrypting unchanged data
+// would produce a different blob every run and commit 44 MB of noise on each one.
 function pack() {
   const rels = new Set(walk(VAULT_DIR, '.enc').map((p) => relative(VAULT_DIR, p).slice(0, -'.enc'.length)));
   for (const plainPath of walk(WORK_DIR, '')) rels.add(relative(WORK_DIR, plainPath));
 
-  let count = 0;
+  let changed = 0;
   for (const rel of [...rels].sort()) {
     const plainPath = join(WORK_DIR, rel);
     const encPath = join(VAULT_DIR, `${rel}.enc`);
     if (!existsSync(plainPath)) continue;
-    const before = existsSync(encPath) ? readFileSync(encPath) : null;
-    encrypt(readFileSync(plainPath), encPath);
-    const changed = !before || !before.equals(readFileSync(encPath));
-    log(`packed ${rel}${changed ? '' : ' (unchanged)'}`);
-    count += 1;
+
+    const plain = readFileSync(plainPath);
+    if (existsSync(encPath) && decryptToBuffer(encPath).equals(plain)) {
+      log(`packed ${rel} (unchanged)`);
+      continue;
+    }
+    encrypt(plain, encPath);
+    log(`packed ${rel}`);
+    changed += 1;
   }
-  return count;
+  return changed;
 }
 
 const command = process.argv[2];

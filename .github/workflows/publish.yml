@@ -79,7 +79,7 @@ jobs:
         id: publish
         env:
           ASSETS_DIR: ${{ github.workspace }}/work
-          EPUB_PATH: ${{ github.workspace }}/work/book/book.epub
+          EPUB_PATH: ${{ github.workspace }}/work/book.epub
           STATE_PATH: ${{ github.workspace }}/work/state/state.json
           SESSION_PATH: ${{ github.workspace }}/work/session/storage-state.json
           ARTIFACT_DIR: ${{ github.workspace }}/artifacts
