@@ -68,6 +68,17 @@ async function main() {
   const state = loadState();
   const end = END_INPUT || book.total;
 
+  // Already finished a previous book and nobody asked for a specific range: stop before spending a
+  // browser and a login on a run that has nothing to do. An explicit start_chapter always wins.
+  if (!START_INPUT && state.finishedAt && num(state.nextChapter) > end) {
+    log(`state says this book finished at ${state.finishedAt}, nothing to do`);
+    setOutput('published', 0);
+    setOutput('remaining', 0);
+    setOutput('next_chapter', state.nextChapter);
+    setOutput('finished', 'true');
+    return;
+  }
+
   if (DRY_RUN) {
     for (const n of [START_INPUT || 1, Math.min(book.total, (START_INPUT || 1) + 2)]) {
       const ch = book.chapter(n);
@@ -165,14 +176,23 @@ async function main() {
     await inkstone.close();
   }
 
-  const remaining = Math.max(0, end - state.nextChapter + 1);
+  // A run that started past the end of the range (or that could not move the pointer) must not
+  // report "remaining", or the workflow would dispatch itself forever.
+  const noProgress = published === 0 && num(state.nextChapter) < next;
+  const remaining = noProgress ? 0 : Math.max(0, end - state.nextChapter + 1);
+
   state.finishedAt = remaining === 0 ? new Date().toISOString() : null;
   saveState(state);
   commitState(`chore: upload progress ${state.nextChapter - 1}/${book.total}`);
 
   log(`published ${published} chapter(s) this run; next pending EPUB chapter is ${state.nextChapter}`);
-  if (remaining > 0) log(`${remaining} chapter(s) still to go`);
-  else log('all chapters in range are uploaded');
+  if (noProgress) {
+    log(`nothing was publishable in the range ${next}..${end}; treating this as done so the chain stops`);
+  } else if (remaining > 0) {
+    log(`${remaining} chapter(s) still to go`);
+  } else {
+    log('all chapters in range are uploaded');
+  }
 
   setOutput('published', published);
   setOutput('remaining', remaining);
