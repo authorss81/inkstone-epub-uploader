@@ -1,0 +1,124 @@
+name: Publish EPUB chapters to Inkstone
+
+on:
+  workflow_dispatch:
+    inputs:
+      book_id:
+        description: 'Inkstone book id (leave empty to use the repo secret INKSTONE_BOOK_ID)'
+        required: false
+        default: ''
+      start_chapter:
+        description: 'EPUB chapter to start from (0 = resume automatically)'
+        required: false
+        default: '0'
+      end_chapter:
+        description: 'EPUB chapter to stop at (0 = end of book)'
+        required: false
+        default: '0'
+      max_chapters:
+        description: 'Chapters to publish in this run'
+        required: false
+        default: '50'
+      delay_seconds:
+        description: 'Pause between chapters'
+        required: false
+        default: '45'
+      dry_run:
+        description: 'Parse the EPUB and print a preview without uploading'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: inkstone-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - name: Check out assets
+        uses: actions/checkout@v4
+
+      - name: Check out uploader code
+        run: |
+          git clone --depth 1 https://github.com/authorss81/inkstone-epub-uploader.git code
+          echo "code $(git -C code rev-parse --short HEAD)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: code/package-lock.json
+
+      - name: Install dependencies
+        working-directory: code
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: code
+        run: npx playwright install --with-deps chromium
+
+      - name: Configure git
+        run: |
+          git config user.name "inkstone-uploader"
+          git config user.email "actions@github.com"
+
+      - name: Publish
+        id: publish
+        env:
+          ASSETS_DIR: ${{ github.workspace }}
+          EPUB_PATH: ${{ github.workspace }}/book/book.epub
+          STATE_PATH: ${{ github.workspace }}/state/state.json
+          SESSION_PATH: ${{ github.workspace }}/session/storage-state.json
+          ARTIFACT_DIR: ${{ github.workspace }}/artifacts
+          INKSTONE_BOOK_ID: ${{ inputs.book_id || secrets.INKSTONE_BOOK_ID }}
+          INKSTONE_EMAIL: ${{ secrets.INKSTONE_EMAIL }}
+          INKSTONE_PASSWORD: ${{ secrets.INKSTONE_PASSWORD }}
+          START_CHAPTER: ${{ inputs.start_chapter }}
+          END_CHAPTER: ${{ inputs.end_chapter }}
+          MAX_CHAPTERS: ${{ inputs.max_chapters }}
+          DELAY_SECONDS: ${{ inputs.delay_seconds }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+          GIT_COMMIT: '1'
+        run: node code/src/publish.mjs
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Inkstone upload"
+            echo ""
+            echo "- published this run: ${{ steps.publish.outputs.published || 0 }}"
+            echo "- next EPUB chapter: ${{ steps.publish.outputs.next_chapter || 'unknown' }}"
+            echo "- still to go: ${{ steps.publish.outputs.remaining || 0 }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inkstone-debug-${{ github.run_number }}
+          path: artifacts
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Hand off to the next run
+        if: success() && inputs.dry_run == false && steps.publish.outputs.finished != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "still ${{ steps.publish.outputs.remaining }} chapters left, dispatching the next run"
+          gh workflow run publish.yml \
+            --ref "${{ github.ref_name }}" \
+            -f book_id="${{ inputs.book_id }}" \
+            -f start_chapter=0 \
+            -f end_chapter=${{ inputs.end_chapter }} \
+            -f max_chapters=${{ inputs.max_chapters }} \
+            -f delay_seconds=${{ inputs.delay_seconds }}

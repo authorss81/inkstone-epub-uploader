@@ -1,0 +1,19 @@
+{
+  "name": "inkstone-epub-uploader",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Automated EPUB -> Webnovel Inkstone chapter publisher",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "publish": "node src/publish.mjs",
+    "inspect": "node src/inspect.mjs"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2",
+    "node-html-parser": "^6.1.13",
+    "playwright": "^1.49.1"
+  }
+}
