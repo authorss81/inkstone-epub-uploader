@@ -61,6 +61,12 @@ jobs:
         working-directory: code
         run: npm ci
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('code/package-lock.json') }}
+
       - name: Install Chromium
         working-directory: code
         run: npx playwright install --with-deps chromium
