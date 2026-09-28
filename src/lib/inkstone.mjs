@@ -263,9 +263,12 @@ export class Inkstone {
     ];
 
     for (const attempt of attempts) {
-      const { body } = await this.apiGet(attempt.path, attempt.params);
+      const { status, body } = await this.apiGet(attempt.path, attempt.params);
       const result = body?.result;
-      if (!result) continue;
+      if (!result) {
+        warn(`chapter count: ${attempt.path} gave http ${status} returnCode ${body?.returnCode ?? '?'} (${body?.returnMsg ?? 'no result'})`);
+        continue;
+      }
 
       const list =
         result.chapters ??
@@ -283,7 +286,10 @@ export class Inkstone {
         log(`chapter count from ${attempt.path} = ${total}`);
         return { total };
       }
+
+      warn(`chapter count: ${attempt.path} returned keys [${Object.keys(result).slice(0, 12).join(', ')}], no count found`);
     }
+    warn('could not determine the published chapter count from any known endpoint');
     return null;
   }
 

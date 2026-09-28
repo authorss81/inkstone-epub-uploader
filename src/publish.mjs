@@ -107,13 +107,20 @@ async function main() {
   }
 
   if (DRY_RUN) {
-    for (const n of [START_INPUT || 1, Math.min(book.total, (START_INPUT || 1) + 2)]) {
+    log('DRY RUN: previewing the parser only. No browser, no login, nothing uploaded, nothing committed.');
+    const from = START_INPUT || 1;
+    for (const n of [from, Math.min(book.total, from + 2)]) {
       const ch = book.chapter(n);
-      log(`chapter ${n}: title="${ch.title}" words=${ch.wordCount} paragraphs=${ch.paragraphs.length}`);
-      log(`  html head: ${ch.html.slice(0, 160)}`);
+      log(`  preview EPUB chapter ${n}: title="${ch.title}" words=${ch.wordCount} paragraphs=${ch.paragraphs.length}`);
+      log(`    html head: ${ch.html.slice(0, 160)}`);
     }
+    log(
+      `this preview always shows chapters from ${from}; it is a sample of the parser, not the resume point. ` +
+        'A real run decides where to start after signing in to Inkstone.',
+    );
     setOutput('remaining', 0);
     setOutput('published', 0);
+    setOutput('finished', 'true');
     return;
   }
 
@@ -140,13 +147,24 @@ async function main() {
     });
 
     if (!next) {
-      const detected = await inkstone.publishedCount().catch(() => null);
+      const detected = await inkstone.publishedCount().catch((err) => {
+        warn(`chapter count probe threw: ${err.message}`);
+        return null;
+      });
+
       if (detected !== null && Number.isFinite(detected)) {
         next = detected + 1;
         log(`platform reports ${detected} published chapters, resuming at EPUB chapter ${next}`);
+      } else if (num(state.nextChapter)) {
+        next = state.nextChapter;
+        log(`could not read the platform count, falling back to the saved pointer: chapter ${next}`);
       } else {
-        next = num(state.nextChapter, 1);
-        log(`could not read the platform chapter count, falling back to state (${next})`);
+        // Never guess. Starting at 1 on a book that already has chapters would duplicate them.
+        throw new Error(
+          'Cannot tell where to resume: the platform chapter count was unreadable and there is no saved ' +
+            'pointer in the vault. Re-run with start_chapter set to the EPUB chapter number you want to ' +
+            'publish next (1 if the book is genuinely empty, otherwise the number after your last one).',
+        );
       }
     } else {
       log(`using explicit start ${next}`);
