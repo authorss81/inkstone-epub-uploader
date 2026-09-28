@@ -73,6 +73,9 @@ npx playwright install chromium
 
 node src/inspect.mjs ./book/book.epub 1
 
+# are Inkstone's selectors still valid?
+node src/probe-login.mjs
+
 DRY_RUN=1 EPUB_PATH=./book/book.epub node src/publish.mjs
 
 # for real
@@ -81,8 +84,9 @@ ASSETS_DIR=./assets INKSTONE_BOOK_ID=123456 INKSTONE_EMAIL=... INKSTONE_PASSWORD
 ```
 
 Useful environment variables beyond the workflow inputs:
-`TITLE_STRIP_NUMBER=0` keeps the `Chapter N` prefix, `COMMIT_EVERY`, `MAX_FAILURES`, `HEADLESS=0`
-watches the browser work.
+`TITLE_STRIP_NUMBER=0` keeps the `Chapter N` prefix, `COMMIT_EVERY`, `MAX_FAILURES`,
+`HEADLESS=0` watches the browser work, `BROWSER_EXECUTABLE_PATH` uses a Chrome or Edge you already
+have instead of Playwright's bundled Chromium.
 
 ## Limits worth knowing
 

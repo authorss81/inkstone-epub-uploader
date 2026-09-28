@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { chromium } from 'playwright';
 
 export const BASE = 'https://inkstone.webnovel.com';
-const PASSPORT_HOST = 'oa-passport.webnovel.com';
+const PASSPORT_HOST = 'https://passport.webnovel.com';
 
 const log = (msg) => console.log(`[inkstone] ${msg}`);
 const warn = (msg) => console.warn(`[inkstone] ${msg}`);
@@ -12,20 +12,37 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 class InkstoneError extends Error {}
 
-function artifactDir() {
-  const dir = process.env.ARTIFACT_DIR || 'artifacts';
-  mkdirSync(dir, { recursive: true });
-  return dir;
-}
-
-async function shoot(page, name) {
-  const file = `${artifactDir()}/${name}-${Date.now()}.png`;
+async function shoot(page, name, dir) {
+  const target = dir || process.env.ARTIFACT_DIR || 'artifacts';
+  mkdirSync(target, { recursive: true });
+  const file = join(target, `${name}-${Date.now()}.png`);
   try {
     await page.screenshot({ path: file, fullPage: true });
     warn(`screenshot saved: ${file}`);
   } catch {
     /* ignore */
   }
+}
+
+function collectErrorText() {
+  const selectors = [
+    '.codeTip',
+    '._error',
+    '[class*="error"]',
+    '[class*="Error"]',
+    '[role="alert"]',
+    '.tips',
+    '.tip',
+    '.m-form-fieldset span',
+  ];
+  const found = [];
+  for (const selector of selectors) {
+    for (const el of document.querySelectorAll(selector)) {
+      const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (text && text.length < 200) found.push(text);
+    }
+  }
+  return [...new Set(found)];
 }
 
 function loadJson(path, fallback = null) {
@@ -50,8 +67,10 @@ export class Inkstone {
 
   async launch() {
     const storageState = loadJson(this.sessionPath);
+    const executablePath = process.env.BROWSER_EXECUTABLE_PATH || undefined;
     this.browser = await chromium.launch({
       headless: this.headless,
+      executablePath,
       args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
     });
     this.context = await this.browser.newContext({
@@ -73,6 +92,10 @@ export class Inkstone {
     await this.browser?.close();
   }
 
+  snapshot(name) {
+    return shoot(this.page, name, this.artifactPath);
+  }
+
   async saveSession() {
     if (!this.sessionPath) return;
     mkdirSync(dirname(this.sessionPath), { recursive: true });
@@ -91,7 +114,7 @@ export class Inkstone {
   }
 
   async refreshAuthToken() {
-    const cookies = await this.context.cookies([BASE, `https://.${PASSPORT_HOST.replace(/\.webnovel\.com$/, '.webnovel.com')}`].flat());
+    const cookies = await this.context.cookies([BASE, PASSPORT_HOST]);
     const token = cookies.find((c) => c.name === 'inkstone_auth_token');
     this.authToken = token?.value ?? '';
     return this.authToken;
@@ -154,39 +177,69 @@ export class Inkstone {
   }
 
   async login({ email, password }) {
-    const returnUrl = `${BASE}/novels/list`;
-    log('opening login page');
-    await this.page.goto(`${BASE}/login?returnUrl=${encodeURIComponent(returnUrl)}`, {
-      waitUntil: 'domcontentloaded',
+    const redirectUrl = `${BASE}/novels/list`;
+    const returnurl = `${BASE}/login/callback?redirectUrl=${encodeURIComponent(redirectUrl)}`;
+    const params = new URLSearchParams({
+      auto: '1',
+      target: 'iframe',
+      maskOpacity: '50',
+      popup: '1',
+      format: 'redirect',
+      appid: '900',
+      areaid: '8',
+      source: 'qidianoversea',
+      channel: 'pc',
+      returnurl,
     });
+    const loginUrl = `${PASSPORT_HOST}/emaillogin.html?${params}`;
 
-    const signInButton = this.page.locator('a[class*="login_button"]').first();
-    await signInButton.waitFor({ state: 'visible', timeout: 60000 });
-    await signInButton.click();
+    log('opening the email login page');
+    await this.page.goto(loginUrl, { waitUntil: 'domcontentloaded' });
 
-    const frameElement = this.page.frameLocator('iframe[title="login"]');
-    const emailInput = frameElement.locator('input[type="text"], input:not([type])').first();
-    const passwordInput = frameElement.locator('input[type="password"]').first();
+    const emailInput = this.page.locator('input#email, input.loginEmail').first();
+    const passwordInput = this.page.locator('input[type="password"]').first();
     await passwordInput.waitFor({ state: 'visible', timeout: 60000 });
-
-    log('submitting credentials');
     await emailInput.fill(email);
     await passwordInput.fill(password);
 
-    const submit = frameElement.locator('button[type="submit"], button:has-text("Sign In"), button:has-text("Log in")').first();
-    await submit.click();
+    const trust = this.page.locator('#trustcode:visible, input[name="trustcode"]:visible').first();
+    if (await trust.count()) {
+      await this.snapshot('login-needs-trust-code');
+      throw new InkstoneError(
+        'the passport is asking for a verification code for this login attempt. Sign in once by hand in a normal browser; later runs reuse the stored session.',
+      );
+    }
 
-    log('waiting for redirect back to inkstone');
+    log('submitting credentials');
+    await this.page.locator('button#submit').first().click();
+
+    log('waiting for the callback into inkstone');
     await this.page
-      .waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 120000 })
+      .waitForURL((url) => url.hostname.endsWith('inkstone.webnovel.com'), { timeout: 120000 })
       .catch(async () => {
-        await shoot(this.page, 'login-stuck');
+        await this.snapshot('login-stuck');
+        const problems = await this.page.evaluate(collectErrorText).catch(() => []);
         throw new InkstoneError(
-          'login did not complete. A captcha, email code or unusual-device check probably needs to be cleared once from a normal browser.',
+          `login was rejected before reaching inkstone. ${problems.length ? `passport said: ${problems.join(' | ')}` : 'No error text was rendered, check the screenshot.'}`,
         );
       });
 
+    // /login/callback calls /tauthorweb/login/verify and then lands on redirectUrl.
     await this.page.waitForLoadState('domcontentloaded').catch(() => {});
+    await this.page
+      .waitForFunction(
+        () => document.cookie.includes('inkstone_auth_token'),
+        null,
+        { timeout: 90000 },
+      )
+      .catch(async () => {
+        await this.snapshot('login-no-token');
+        throw new InkstoneError(
+          'inkstone accepted the redirect but never issued a session token. The account may need a device or captcha check once.',
+        );
+      });
+
+    await this.page.goto(redirectUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
     await this.refreshAuthToken();
   }
 
@@ -274,15 +327,20 @@ export class Inkstone {
       .catch(() => warn('could not confirm editor content length, continuing anyway'));
   }
 
-  async clickButton(patterns, { timeout = 60000 } = {}) {
-    for (const pattern of patterns) {
-      const locator = this.page.getByRole('button', { name: pattern }).first();
+  // Each target is either { name: /regex/ } matched against the accessible button name, or
+  // { css: 'selector' }. Labels move around between Inkstone builds, so try several.
+  async clickButton(targets, { timeout = 60000 } = {}) {
+    const budget = Math.max(4000, Math.floor(timeout / targets.length));
+    for (const target of targets) {
+      const locator = target.css
+        ? this.page.locator(target.css).first()
+        : this.page.getByRole('button', { name: target.name }).first();
       try {
-        await locator.waitFor({ state: 'visible', timeout: Math.min(timeout, 15000) });
-        await locator.click();
+        await locator.waitFor({ state: 'visible', timeout: budget });
+        await locator.click({ timeout: budget });
         return true;
       } catch {
-        /* try next */
+        /* try the next strategy */
       }
     }
     return false;
@@ -303,9 +361,13 @@ export class Inkstone {
     await this.fillEditor(chapter);
 
     log(`saving chapter ${chapter.index} "${chapter.title}"`);
-    const saved = await this.clickButton([/^save$/i, /^save and/i]);
+    const saved = await this.clickButton([
+      { name: /^save$/i },
+      { name: /^update$/i },
+      { css: 'button.g_header_btn' },
+    ]);
     if (!saved) {
-      await shoot(this.page, `save-failed-${chapter.index}`);
+      await this.snapshot(`save-failed-${chapter.index}`);
       throw new InkstoneError(`could not find the Save button for chapter ${chapter.index}`);
     }
 
@@ -315,9 +377,9 @@ export class Inkstone {
     await sleep(1500);
 
     log(`publishing chapter ${chapter.index}`);
-    const opened = await this.clickButton([/^publish$/i, /^publish and/i]);
+    const opened = await this.clickButton([{ name: /^publish$/i }, { name: /^publish now$/i }]);
     if (!opened) {
-      await shoot(this.page, `publish-button-missing-${chapter.index}`);
+      await this.snapshot(`publish-button-missing-${chapter.index}`);
       throw new InkstoneError(`could not find the Publish button for chapter ${chapter.index}`);
     }
 
@@ -325,7 +387,15 @@ export class Inkstone {
     await this.dismissOptionalModal();
     await sleep(1500);
 
-    const confirmed = await this.clickButton([/^confirm$/i, /^ok$/i, /^yes$/i], { timeout: 45000 });
+    const confirmed = await this.clickButton(
+      [
+        { name: /^confirm$/i },
+        { css: '.ant-modal-footer .ant-btn-primary' },
+        { name: /^ok$/i },
+        { name: /^yes$/i },
+      ],
+      { timeout: 45000 },
+    );
     if (!confirmed) warn('no confirm dialog appeared, assuming publish went through');
 
     await sleep(3000);
@@ -336,7 +406,7 @@ export class Inkstone {
       bodyText,
     );
     if (blocked) {
-      await shoot(this.page, `publish-blocked-${chapter.index}`);
+      await this.snapshot(`publish-blocked-${chapter.index}`);
       throw new InkstoneError(
         `Inkstone refused the publish. On-page message: ${bodyText.replace(/\s+/g, ' ').slice(0, 400)}`,
       );
