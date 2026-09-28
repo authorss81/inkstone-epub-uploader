@@ -9,7 +9,11 @@
   },
   "scripts": {
     "publish": "node src/publish.mjs",
-    "inspect": "node src/inspect.mjs"
+    "inspect": "node src/inspect.mjs",
+    "probe": "node src/probe-login.mjs",
+    "vault:unpack": "node src/vault.mjs unpack",
+    "vault:pack": "node src/vault.mjs pack",
+    "vault:seal": "node src/vault.mjs seal"
   },
   "dependencies": {
     "fflate": "^0.8.2",

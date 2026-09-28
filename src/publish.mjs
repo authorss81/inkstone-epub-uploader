@@ -41,7 +41,19 @@ function saveState(state) {
   writeFileSync(STATE_PATH, `${JSON.stringify(state, null, 2)}\n`);
 }
 
+// In CI this is scripts/seal-and-push.sh, which re-encrypts work/ into the vault and pushes it.
+// Locally, GIT_COMMIT=1 falls back to committing ASSETS_DIR directly when it is a git checkout.
 function commitState(message) {
+  const hook = process.env.PROGRESS_HOOK;
+  if (hook) {
+    try {
+      execFileSync(hook, [message], { stdio: 'pipe' });
+      log('progress sealed into the vault and pushed');
+    } catch (err) {
+      log(`progress save failed: ${String(err.stderr ?? err.message).split('\n').pop()}`);
+    }
+    return;
+  }
   if (process.env.GIT_COMMIT !== '1') return;
   try {
     execFileSync('git', ['add', '-A'], { cwd: ASSETS_DIR, stdio: 'pipe' });

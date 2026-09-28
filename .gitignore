@@ -1,5 +1,10 @@
 node_modules/
 artifacts/
-*.log
+
+# Plaintext lives here while a run is in progress and must never be committed.
+work/
+vault-test/
+work-test*/
 .env
 .env.local
+*.log
