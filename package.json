@@ -10,6 +10,7 @@
   "scripts": {
     "signin": "node src/signin.mjs",
     "grab": "node src/grab-cookies.mjs",
+    "import": "node src/import-cookies.mjs",
     "publish": "node src/publish.mjs",
     "publish:all": "node src/publish.mjs",
     "inspect": "node src/inspect.mjs",

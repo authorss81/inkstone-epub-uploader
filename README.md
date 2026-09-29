@@ -95,17 +95,33 @@ $env:MAX_CHAPTERS = 50
 npm run publish:all                     # loops in batches until the book is finished
 ```
 
-**B. Cookie injection, so the uploading itself runs on GitHub Actions.** You only spend ~1 minute
-on your PC to capture the session; the workflow then does the rest unattended.
+**B. Cookie injection, so the uploading itself runs on GitHub Actions.** You spend a couple of
+minutes on your PC exporting the session; the workflow then does the rest unattended.
+
+Google refuses to let Google accounts sign in from an automated browser, so `npm run signin` and
+`npm run grab` will both stop at "This browser or app may not be secure". A real, human-driven
+browser export is the way around it:
+
+1. Install **Cookie Editor** (or EditThisCookie) in your normal browser.
+2. Sign in at <https://inkstone.webnovel.com>, go to your book's editor so the session is live.
+3. With the extension, export the cookies for `webnovel.com` as JSON and save it, say,
+   `cookies.json`.
+4. Seal them:
 
 ```powershell
-$env:BROWSER_CHANNEL = "msedge"
+Set-Location "C:\path\to\inkstone-epub-uploader"
 $env:VAULT_PASSPHRASE = Read-Host "vault passphrase"
 $env:VAULT_DIR = "vault"
-npm run grab                            # sign in with Google, cookies are sealed into vault/
+node src/import-cookies.mjs "C:\path\to\cookies.json"
 Remove-Item Env:\VAULT_PASSPHRASE
-git add vault && git commit -m "chore: refresh inkstone session" && git push
+git add vault
+git commit -m "chore: refresh inkstone session"
+git push
 ```
+
+`import-cookies` filters to `*.webnovel.com`, converts the extension's format to a Playwright
+`storageState`, never writes the plaintext inside the repo, and reports the token's real lifetime.
+It also accepts a raw Playwright `storageState` JSON if you have one.
 
 Then run the workflow as usual.
 
