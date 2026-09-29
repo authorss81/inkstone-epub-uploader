@@ -33,6 +33,7 @@ const END_INPUT = num(process.env.END_CHAPTER);
 const MAX_CHAPTERS = num(process.env.MAX_CHAPTERS, 50);
 const DELAY_SECONDS = num(process.env.DELAY_SECONDS, 45);
 const COMMIT_EVERY = num(process.env.COMMIT_EVERY, 5);
+const RESTART_EVERY = num(process.env.RESTART_EVERY, 25);
 const MAX_FAILURES = num(process.env.MAX_FAILURES, 3);
 const DRY_RUN = process.env.DRY_RUN === '1';
 
@@ -65,6 +66,16 @@ function saveState(state) {
   writeFileSync(STATE_PATH, `${JSON.stringify(state, null, 2)}\n`);
 }
 
+function describeExecError(err) {
+  // execFileSync puts the child's diagnostics on stderr as a Buffer, which is truthy even when
+  // empty, so `err.stderr ?? err.message` silently printed nothing. Fall through to stdout.
+  const out = [err.stderr, err.stdout, err.message]
+    .map((v) => (v ? String(v).trim() : ''))
+    .filter(Boolean)
+    .join(' | ');
+  return out.split('\n').filter(Boolean).slice(-3).join(' / ') || 'no output';
+}
+
 // In CI this is scripts/seal-and-push.sh, which re-encrypts work/ into the vault and pushes it.
 // Locally, GIT_COMMIT=1 falls back to committing ASSETS_DIR directly when it is a git checkout.
 function commitState(message) {
@@ -74,7 +85,7 @@ function commitState(message) {
       execFileSync(hook, [message], { stdio: 'pipe' });
       log('progress sealed into the vault and pushed');
     } catch (err) {
-      log(`progress save failed: ${String(err.stderr ?? err.message).split('\n').pop()}`);
+      log(`progress save failed: ${describeExecError(err)}`);
     }
     return;
   }
@@ -85,7 +96,7 @@ function commitState(message) {
     execFileSync('git', ['push', 'origin', 'HEAD'], { cwd: ASSETS_DIR, stdio: 'pipe' });
     log(`state committed: ${message}`);
   } catch (err) {
-    log(`state commit skipped: ${String(err.stderr ?? err.message).split('\n')[0]}`);
+    log(`state commit skipped: ${describeExecError(err)}`);
   }
 }
 
@@ -233,6 +244,12 @@ async function main() {
 
         saveState(state);
         if (published % COMMIT_EVERY === 0) commitState(`chore: progress through EPUB chapter ${n}`);
+
+        // Keep the browser flat so chapter 2000 is as quick as chapter 1.
+        if (RESTART_EVERY > 0 && published % RESTART_EVERY === 0) {
+          await inkstone.restart();
+          inkstone.startKeepalive();
+        }
 
         if (published < MAX_CHAPTERS && n < end && DELAY_SECONDS > 0) await sleep(DELAY_SECONDS * 1000);
       } catch (err) {

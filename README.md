@@ -70,7 +70,10 @@ Inkstone, then switch to `publish:all`.
 5. For each chapter: opens `/novels/chapter/create/<bookId>`, fills the title input, writes the body
    via `tinymce.activeEditor.setContent()`, clicks **Save**, then **Publish**, then **Confirm**.
 6. Saves the resume point after every chapter.
-7. Resume is kept in three independent places, so an interrupted run never republishes:
+7. Restarts the browser every `RESTART_EVERY` chapters and clears the SPA's draft-autosave
+   `localStorage` before each one, so chapter 3000 is as quick as chapter 1 instead of the run
+   degrading over hours.
+8. Resume is kept in three independent places, so an interrupted run never republishes:
    - the chapter count Inkstone itself reports, re-read on every run (authoritative),
    - `state/state.json`,
    - the chapter range the run was given.
@@ -169,6 +172,7 @@ session stay encrypted in `vault/`. See [`vault/README.md`](vault/README.md).
 | `BROWSER_EXECUTABLE_PATH` | — | full path to a browser binary |
 | `TITLE_STRIP_NUMBER` | `1` | set `0` to keep the `Chapter N` prefix |
 | `COMMIT_EVERY` | `5` | chapters between progress saves in Actions mode |
+| `RESTART_EVERY` | `25` | chapters between browser restarts; set `0` to disable |
 | `MAX_FAILURES` | `3` | consecutive chapter failures before stopping |
 
 ## Maintenance helpers

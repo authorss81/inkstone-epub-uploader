@@ -398,10 +398,34 @@ export class Inkstone {
     return list.total ?? null;
   }
 
+  // Long runs accumulate browser state: the SPA keeps draft autosaves in localStorage and the
+  // renderer heap only grows. Restarting periodically keeps every chapter the same speed as the
+  // first, and it is far cheaper than discovering a 2 hour run that crawled.
+  async restart() {
+    log('restarting the browser to keep memory flat');
+    this.stopKeepalive();
+    await this.saveSession();
+    await this.close();
+    await this.launch();
+  }
+
   async openNewChapter() {
     const url = `${BASE}/novels/chapter/create/${this.bookId}`;
     log(`opening editor ${url}`);
     await this.page.goto(url, { waitUntil: 'domcontentloaded' });
+    // Drop the SPA's draft autosave cache; it is never useful to us and it grows without bound.
+    await this.page
+      .evaluate(() => {
+        try {
+          for (const key of Object.keys(localStorage)) {
+            if (key.includes('draft_auto_save')) localStorage.removeItem(key);
+          }
+          sessionStorage.clear();
+        } catch {
+          /* ignore */
+        }
+      })
+      .catch(() => {});
     await this.page.waitForFunction(() => window.tinymce?.activeEditor?.initialized === true, null, {
       timeout: 90000,
     });
@@ -457,11 +481,21 @@ export class Inkstone {
   }
 
   async clickButton(targets, { timeout = 60000 } = {}) {
-    const budget = Math.max(4000, Math.floor(timeout / targets.length));
+    // Each target is either { name: /regex/ } matched against the button text, or { css: 'selector' }.
+    // For a name we try the ARIA accessible name first and then a raw text filter, because antd
+    // wraps its label in extra spans and the computed accessible name is not always what you see.
+    const locators = [];
     for (const target of targets) {
-      const locator = target.css
-        ? this.page.locator(target.css).first()
-        : this.page.getByRole('button', { name: target.name }).first();
+      if (target.css) {
+        locators.push(this.page.locator(target.css).first());
+        continue;
+      }
+      locators.push(this.page.getByRole('button', { name: target.name }).first());
+      locators.push(this.page.locator('button:visible, a.ant-btn:visible').filter({ hasText: target.name }).first());
+    }
+
+    const budget = Math.max(4000, Math.floor(timeout / locators.length));
+    for (const locator of locators) {
       try {
         await locator.waitFor({ state: 'visible', timeout: budget });
         await locator.click({ timeout: budget });
@@ -489,9 +523,9 @@ export class Inkstone {
 
     log(`saving chapter ${chapter.index} "${chapter.title}"`);
     const saved = await this.clickButton([
-      { name: /^save$/i },
-      { name: /^update$/i },
+      { css: 'button.ant-btn-default.ant-btn-lg' },
       { css: 'button.g_header_btn' },
+      { name: /^save$/i },
     ]);
     if (!saved) {
       await this.listButtons(`no Save button on chapter ${chapter.index}`);
@@ -505,7 +539,14 @@ export class Inkstone {
     await sleep(1500);
 
     log(`publishing chapter ${chapter.index}`);
-    const opened = await this.clickButton([{ name: /^publish$/i }, { name: /^publish now$/i }]);
+    // antd renders its icon as <span role="img" aria-label="recommend">, which is folded into the
+    // button's accessible name, so getByRole sees "recommend publish" and /^publish$/i never
+    // matches. The class selector is the reliable one, so try it first.
+    const opened = await this.clickButton([
+      { css: 'button.ant-btn-primary.ml16' },
+      { name: /^publish$/i },
+      { name: /^publish now$/i },
+    ]);
     if (!opened) {
       await this.listButtons(`no Publish button on chapter ${chapter.index}`);
       await this.snapshot(`publish-button-missing-${chapter.index}`);
