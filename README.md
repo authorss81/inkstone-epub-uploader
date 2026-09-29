@@ -1,123 +1,127 @@
 # inkstone-epub-uploader
 
-Publishes a chapter range from an EPUB to a **Webnovel Inkstone** book, fully automatically, from
-GitHub Actions. No browser, no copy/paste. Each run uploads a batch, records how far it got, and
-dispatches the next run until the range is finished.
+Publishes a chapter range from an EPUB to a **Webnovel Inkstone** book, fully automatically. No
+copy/paste, no clicking through a UI 3600 times. Each run uploads a batch, remembers where it got
+to, and carries on until the range is finished.
 
-Because the workflow runs here, in a **public** repo, the runner minutes are unmetered rather than
-capped at the 2,000/month that private repos get. The novel text and the Inkstone session cookie
-are still protected: both live in [`vault/`](vault/README.md) encrypted with AES-256-GCM, and
-plaintext only ever exists in the git-ignored `work/` directory while a run is in progress.
+## Two ways to run it
 
-## How it works
+| | How | Best for |
+| --- | --- | --- |
+| **Local** (recommended) | `npm run signin` once, then `npm run publish:all` on your own PC | Google/social accounts, and anything long-running |
+| **GitHub Actions** | the workflow in this repo | password-based accounts |
 
-1. `node src/vault.mjs unpack` decrypts `vault/` into `work/` using the `VAULT_PASSPHRASE` secret.
-2. Reads `META-INF/container.xml` -> OPF -> spine, so chapters are ordered the way the EPUB defines
-   them rather than by filename. Front matter (`cover.xhtml`, title pages, nav, ...) is skipped.
-3. Converts each chapter XHTML into clean `<p>` HTML plus a title, stripping the redundant
-   `Chapter N` prefix so Inkstone does not render "Chapter 12 Chapter 12 …".
-4. Logs into Inkstone with Playwright once, stores the cookie jar in the vault, and reuses it on
-   later runs, logging in again if the session expired.
-5. For each chapter: opens `/novels/chapter/create/<bookId>`, fills the title input, writes the body
-   via `tinymce.activeEditor.setContent()`, clicks **Save**, then **Publish**, then **Confirm**.
-6. Every `COMMIT_EVERY` chapters, and again at the end of the run, `scripts/seal-and-push.sh`
-   re-encrypts `work/` back into `vault/` and commits it with the repo's own `GITHUB_TOKEN`.
-7. Resume is kept in three independent places, so a killed runner never republishes:
-   - the chapter count Inkstone itself reports, re-read on every run (authoritative),
-   - `vault/state/state.json.enc`,
-   - the chapter range the run was given.
-8. Writes a `finished` output and dispatches itself with `gh workflow run` while work remains.
-   `workflow_dispatch` is the one event a `GITHUB_TOKEN` may trigger, so self-handoff works.
+Most Inkstone accounts are created through Google, Facebook or LINE, and Webnovel's password-reset
+service reports those as "Account does not exist" — there is no password to script. The local mode
+sidesteps that by signing in once through a real browser window and reusing that profile forever,
+so no password is ever needed.
 
-## Setup
-
-### 1. Add the secrets
-
-| Secret | Value |
-| --- | --- |
-| `VAULT_PASSPHRASE` | 20+ random characters. Only thing protecting the encrypted files. |
-| `INKSTONE_EMAIL` | Inkstone / Webnovel account email |
-| `INKSTONE_PASSWORD` | account password |
-| `INKSTONE_BOOK_ID` | numeric id from the URL `/novels/view/<bookId>` |
+## Local mode (recommended)
 
 ```powershell
-gh secret set VAULT_PASSPHRASE   --repo authorss81/inkstone-epub-uploader
-gh secret set INKSTONE_EMAIL     --repo authorss81/inkstone-epub-uploader
-gh secret set INKSTONE_PASSWORD --repo authorss81/inkstone-epub-uploader
-gh secret set INKSTONE_BOOK_ID  --repo authorss81/inkstone-epub-uploader
+git clone https://github.com/authorss81/inkstone-epub-uploader.git
+cd inkstone-epub-uploader
+npm install
+npx playwright install chromium          # or set BROWSER_CHANNEL=msedge / chrome
 ```
 
-### 2. Seal the book
-
-Do this on a machine that has the EPUB, so the passphrase never leaves it:
+**1. Seal the EPUB** (only if you have not already):
 
 ```powershell
 $env:VAULT_PASSPHRASE = Read-Host "vault passphrase"
 node src/vault.mjs seal "C:\path\to\book.epub" vault/book.epub.enc
 Remove-Item Env:\VAULT_PASSPHRASE
-git add vault/book.epub.enc && git commit -m "feat: add encrypted book" && git push
 ```
 
-### 3. Run it
+**2. Sign in, once, by hand:**
 
-Actions -> **Publish EPUB chapters to Inkstone** -> Run workflow.
+```powershell
+$env:INKSTONE_BOOK_ID = "12345678"      # from inkstone.webnovel.com/novels/view/<id>
+npm run signin
+```
 
-| Input | Default | Meaning |
+A Chrome window opens on the Inkstone login page. Sign in however you normally do. The script
+watches for the session to appear, tells you how many chapters the book already has, and exits.
+The profile lives in `.profile/` and is reused from then on.
+
+**3. Publish:**
+
+```powershell
+$env:INKSTONE_BOOK_ID = "12345678"
+$env:MAX_CHAPTERS = 50
+$env:DELAY_SECONDS = 45
+npm run publish:all
+```
+
+`publish:all` loops in batches of `MAX_CHAPTERS` until the range is finished, so you can leave it
+running. `npm run publish` does a single batch and exits, which is the safer way to test.
+
+Start small: `MAX_CHAPTERS=2`, `DELAY_SECONDS=90`, plain `npm run publish`. Check the result on
+Inkstone, then switch to `publish:all`.
+
+## How it works
+
+1. `node src/vault.mjs unpack` decrypts `vault/` into `work/` using the `VAULT_PASSPHRASE`.
+2. Reads `META-INF/container.xml` -> OPF -> spine, so chapters are ordered the way the EPUB defines
+   them rather than by filename. Front matter (`cover.xhtml`, title pages, nav, ...) is skipped.
+3. Converts each chapter XHTML into clean `<p>` HTML plus a title, stripping the redundant
+   `Chapter N` prefix so Inkstone does not render "Chapter 12 Chapter 12 …".
+4. Signs in once, stores the session in `.profile/`, and reuses it on later runs.
+5. For each chapter: opens `/novels/chapter/create/<bookId>`, fills the title input, writes the body
+   via `tinymce.activeEditor.setContent()`, clicks **Save**, then **Publish**, then **Confirm**.
+6. Saves the resume point after every chapter.
+7. Resume is kept in three independent places, so an interrupted run never republishes:
+   - the chapter count Inkstone itself reports, re-read on every run (authoritative),
+   - `state/state.json`,
+   - the chapter range the run was given.
+
+If the resume point cannot be determined the run stops and asks, rather than guessing chapter 1 and
+duplicating your existing chapters.
+
+## GitHub Actions mode
+
+Only for accounts that have a real password. The workflow unpacks the vault, publishes, seals
+progress back into `vault/`, and dispatches itself with `gh workflow run` until done.
+
+| Secret | Value |
+| --- | --- |
+| `VAULT_PASSPHRASE` | 20+ random characters |
+| `INKSTONE_BOOK_ID` | numeric book id |
+| `INKSTONE_EMAIL` | only for password-based accounts |
+| `INKSTONE_PASSWORD` | only for password-based accounts |
+
+Because the workflow runs in a public repo its runner minutes are unmetered, while the book and the
+session stay encrypted in `vault/`. See [`vault/README.md`](vault/README.md).
+
+## Environment variables
+
+| Variable | Default | Meaning |
 | --- | --- | --- |
-| `book_id` | empty | overrides the secret |
-| `start_chapter` | `0` | `0` resumes automatically from wherever the book already is |
-| `end_chapter` | `0` | `0` means end of book |
-| `max_chapters` | `50` | chapters per run, then hand off |
-| `delay_seconds` | `45` | pause between chapters |
-| `dry_run` | `false` | unpack and print a preview, upload nothing |
+| `INKSTONE_BOOK_ID` | — | required, the numeric book id |
+| `PROFILE_DIR` | — | enables profile mode; `npm run signin` defaults it to `.profile` |
+| `MAX_CHAPTERS` | `50` | chapters per batch |
+| `DELAY_SECONDS` | `45` | pause between chapters |
+| `START_CHAPTER` / `END_CHAPTER` | `0` | `0` means auto-detect / end of book |
+| `HEADLESS` | `1` | set `0` to watch the browser work |
+| `BROWSER_CHANNEL` | — | `chrome` or `msedge` to use an installed browser |
+| `BROWSER_EXECUTABLE_PATH` | — | full path to a browser binary |
+| `TITLE_STRIP_NUMBER` | `1` | set `0` to keep the `Chapter N` prefix |
+| `COMMIT_EVERY` | `5` | chapters between progress saves in Actions mode |
+| `MAX_FAILURES` | `3` | consecutive chapter failures before stopping |
 
-Start small: `max_chapters=2`, `delay_seconds=90`. Confirm on Inkstone that the chapters landed,
-then let it chain.
-
-## Local use
+## Maintenance helpers
 
 ```bash
-npm install
-npx playwright install chromium
-
-node src/inspect.mjs ./book.epub 1     # chapter parser
-node src/probe-login.mjs               # are Inkstone's selectors still valid?
-
-DRY_RUN=1 EPUB_PATH=./book.epub node src/publish.mjs
-
-# for real, with a vault
-VAULT_PASSPHRASE=... npm run vault:unpack
-VAULT_PASSPHRASE=... INKSTONE_BOOK_ID=123 INKSTONE_EMAIL=... INKSTONE_PASSWORD=... \
-  MAX_CHAPTERS=1 node src/publish.mjs
+node src/inspect.mjs ./book.epub 1      # chapter parser on a local file
+node src/probe-login.mjs                # are Inkstone's selectors still valid?
 ```
-
-Useful environment variables: `TITLE_STRIP_NUMBER=0` keeps the `Chapter N` prefix, `COMMIT_EVERY`,
-`MAX_FAILURES`, `HEADLESS=0` watches the browser work, `BROWSER_EXECUTABLE_PATH` uses a Chrome or
-Edge you already have instead of Playwright's bundled Chromium.
-
-## The vault
-
-AES-256-GCM with a per-file random salt and IV, key derived by scrypt (N=32768). One flipped byte
-anywhere in a file makes it fail to decrypt rather than hand back garbage. Files:
-
-| Vault file | Written by | Contents |
-| --- | --- | --- |
-| `book.epub.enc` | you, once | the source EPUB |
-| `state/state.json.enc` | the workflow | resume pointer and recent publish log |
-| `session/storage-state.json.enc` | the workflow | Playwright cookie jar for Inkstone |
-
-`work/` is git-ignored, and the workflow only ever runs `git add vault`, so plaintext cannot be
-committed. Rotating `VAULT_PASSPHRASE` means re-sealing every file with the new one.
 
 ## Limits worth knowing
 
-- Inkstone has no public API, so the workflow drives the real editor. A breaking Inkstone redesign
-  means updating the selectors in `src/lib/inkstone.mjs`; failure screenshots are uploaded as
-  artifacts so you can see what changed.
+- Inkstone has no public API, so this drives the real editor. A redesign means updating the
+  selectors in `src/lib/inkstone.mjs`; failure screenshots land in `artifacts/`.
 - `saveChapter` and `publishChapter` are rate limited. If Inkstone refuses, the run stops after
-  `MAX_FAILURES`, keeps its progress, and the next run continues from there.
-- Some accounts must clear a captcha or device check once. If that happens the first run fails with
-  a screenshot; sign in manually once in a normal browser and later runs reuse the stored session.
-- If a run times out or the runner dies, GitHub never reaches the hand-off step and the chain stops.
-  Everything up to that point is sealed into the vault, so re-running resumes correctly.
+  `MAX_FAILURES`, keeps its progress, and the next run continues.
+- A Google session can expire. If a run reports the profile is not signed in, re-run
+  `npm run signin`.
 - Review Webnovel's terms before automating bulk publication.

@@ -1,5 +1,7 @@
 node_modules/
 artifacts/
+.profile/
+probe-profile/
 
 # Plaintext lives here while a run is in progress and must never be committed.
 work/

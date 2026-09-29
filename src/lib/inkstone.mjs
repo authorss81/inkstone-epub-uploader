@@ -55,33 +55,56 @@ function loadJson(path, fallback = null) {
 }
 
 export class Inkstone {
-  constructor({ bookId, sessionPath, artifactPath, headless = true }) {
+  constructor({ bookId, sessionPath, artifactPath, headless = true, profileDir = null }) {
     this.bookId = String(bookId);
     this.sessionPath = sessionPath;
     this.artifactPath = artifactPath;
     this.headless = headless;
+    this.profileDir = profileDir;
     this.authToken = '';
     this.context = null;
     this.page = null;
   }
 
+  get usingProfile() {
+    return Boolean(this.profileDir);
+  }
+
   async launch() {
-    const storageState = loadJson(this.sessionPath);
-    const executablePath = process.env.BROWSER_EXECUTABLE_PATH || undefined;
-    this.browser = await chromium.launch({
-      headless: this.headless,
-      executablePath,
-      args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
-    });
-    this.context = await this.browser.newContext({
+    const common = {
       viewport: { width: 1440, height: 900 },
       locale: 'en-US',
       timezoneId: 'Asia/Shanghai',
       userAgent:
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      storageState: storageState ?? undefined,
-    });
-    this.page = await this.context.newPage();
+      args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
+    };
+    const channel = process.env.BROWSER_CHANNEL || undefined;
+    const executablePath = process.env.BROWSER_EXECUTABLE_PATH || undefined;
+
+    if (this.profileDir) {
+      // A real, persistent profile: sign in with Google once, reuse the session forever. No
+      // password is ever needed, and the request comes from your own machine and network.
+      mkdirSync(this.profileDir, { recursive: true });
+      this.context = await chromium.launchPersistentContext(this.profileDir, {
+        ...common,
+        headless: this.headless,
+        ...(channel ? { channel } : {}),
+        ...(executablePath ? { executablePath } : {}),
+      });
+      this.page = this.context.pages()[0] ?? (await this.context.newPage());
+    } else {
+      const storageState = loadJson(this.sessionPath);
+      this.browser = await chromium.launch({
+        headless: this.headless,
+        ...(channel ? { channel } : {}),
+        ...(executablePath ? { executablePath } : {}),
+        args: common.args,
+      });
+      this.context = await this.browser.newContext({ ...common, storageState: storageState ?? undefined });
+      this.page = await this.context.newPage();
+    }
+
     this.page.setDefaultTimeout(45000);
     this.page.setDefaultNavigationTimeout(60000);
     await this.refreshAuthToken();
@@ -89,7 +112,8 @@ export class Inkstone {
   }
 
   async close() {
-    await this.browser?.close();
+    if (this.usingProfile) await this.context?.close();
+    else await this.browser?.close();
   }
 
   snapshot(name) {
@@ -97,6 +121,9 @@ export class Inkstone {
   }
 
   async saveSession() {
+    // With a persistent profile the browser already owns the session on disk, so there is
+    // nothing extra to persist.
+    if (this.usingProfile) return;
     if (!this.sessionPath) return;
     mkdirSync(dirname(this.sessionPath), { recursive: true });
     const state = await this.context.storageState();
@@ -105,6 +132,7 @@ export class Inkstone {
   }
 
   async clearSession() {
+    if (this.usingProfile) return;
     if (this.sessionPath && existsSync(this.sessionPath)) {
       mkdirSync(dirname(this.sessionPath), { recursive: true });
       writeFileSync(this.sessionPath, JSON.stringify({ cookies: [], origins: [] }));
@@ -164,8 +192,13 @@ export class Inkstone {
 
   async ensureLoggedIn({ email, password }) {
     if (await this.isAuthenticated()) {
-      log('reusing stored session');
+      log(this.usingProfile ? 'browser profile is already signed in' : 'reusing stored session');
       return;
+    }
+    if (this.usingProfile) {
+      throw new InkstoneError(
+        'the saved browser profile is not signed in. Run: npm run signin  and sign in with Google in the window that opens.',
+      );
     }
     if (!email || !password) throw new InkstoneError('no valid session and no INKSTONE_EMAIL/INKSTONE_PASSWORD available');
 

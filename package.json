@@ -8,7 +8,9 @@
     "node": ">=20"
   },
   "scripts": {
+    "signin": "node src/signin.mjs",
     "publish": "node src/publish.mjs",
+    "publish:all": "node src/publish.mjs",
     "inspect": "node src/inspect.mjs",
     "probe": "node src/probe-login.mjs",
     "vault:unpack": "node src/vault.mjs unpack",

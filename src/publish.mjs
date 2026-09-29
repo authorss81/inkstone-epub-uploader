@@ -26,6 +26,7 @@ const EPUB_PATH = resolve(process.env.EPUB_PATH ?? join(ASSETS_DIR, 'book', 'boo
 const STATE_PATH = resolve(process.env.STATE_PATH ?? join(ASSETS_DIR, 'state', 'state.json'));
 const SESSION_PATH = resolve(process.env.SESSION_PATH ?? join(ASSETS_DIR, 'session', 'storage-state.json'));
 const ARTIFACT_DIR = resolve(process.env.ARTIFACT_DIR ?? 'artifacts');
+const PROFILE_DIR = process.env.PROFILE_DIR ? resolve(process.env.PROFILE_DIR) : null;
 
 const START_INPUT = num(process.env.START_CHAPTER);
 const END_INPUT = num(process.env.END_CHAPTER);
@@ -126,6 +127,13 @@ async function main() {
 
   const bookId = process.env.INKSTONE_BOOK_ID;
   if (!bookId) throw new Error('INKSTONE_BOOK_ID is not set');
+  if (!PROFILE_DIR && !process.env.INKSTONE_EMAIL) {
+    throw new Error(
+      'no way to sign in: neither a saved browser profile nor INKSTONE_EMAIL is configured. ' +
+        'If your account uses Google or another social login there is no password to use, so run ' +
+        '"npm run signin" once on your own machine to create the profile, then keep using it.',
+    );
+  }
 
   mkdirSync(ARTIFACT_DIR, { recursive: true });
   const inkstone = new Inkstone({
@@ -133,6 +141,7 @@ async function main() {
     sessionPath: SESSION_PATH,
     artifactPath: ARTIFACT_DIR,
     headless: process.env.HEADLESS !== '0',
+    profileDir: PROFILE_DIR,
   });
 
   await inkstone.launch();
@@ -244,9 +253,29 @@ async function main() {
   setOutput('next_chapter', state.nextChapter);
   setOutput('finished', remaining === 0 ? 'true' : 'false');
   if (stopped) log(stopped);
+
+  return { remaining, published, stopped, next: state.nextChapter };
 }
 
-main().catch((err) => {
+// Local unattended mode: keep re-entering the loop until the range is done, instead of relying on
+// GitHub to dispatch the next run.
+async function runLoop() {
+  let total = 0;
+  for (let attempt = 1; ; attempt += 1) {
+    log(`=== batch ${attempt} ===`);
+    const result = await main();
+    total += result?.published ?? 0;
+    if (!result || result.remaining === 0 || result.stopped) {
+      if (result?.stopped) warn(`${result.stopped}; rerun once you have looked into it`);
+      break;
+    }
+    await sleep(5000);
+  }
+  log(`done: ${total} chapter(s) published across this session`);
+}
+
+const entry = process.env.PUBLISH_LOOP === '1' ? runLoop() : main();
+entry.catch((err) => {
   console.error(`[publish] FAILED: ${err instanceof InkstoneError ? err.message : err.stack}`);
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, 'remaining=1\n');
   process.exit(1);
