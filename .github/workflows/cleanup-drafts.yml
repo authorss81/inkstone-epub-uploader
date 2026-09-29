@@ -16,6 +16,9 @@ on:
 permissions:
   contents: write
 
+env:
+  VAULT_BRANCH: vault-state
+
 concurrency:
   group: inkstone-publish
   cancel-in-progress: false
@@ -51,6 +54,16 @@ jobs:
           git config user.name "inkstone-uploader"
           git config user.email "actions@github.com"
           chmod +x scripts/seal-and-push.sh
+
+      - name: Restore vault progress
+        run: |
+          git fetch --depth 1 origin "+refs/heads/${{ env.VAULT_BRANCH }}:refs/remotes/origin/${{ env.VAULT_BRANCH }}" 2>/dev/null || true
+          if git rev-parse --verify --quiet "origin/${{ env.VAULT_BRANCH }}" >/dev/null; then
+            echo "restoring vault from ${{ env.VAULT_BRANCH }}"
+            git restore --source="origin/${{ env.VAULT_BRANCH }}" vault
+          else
+            echo "no ${{ env.VAULT_BRANCH }} branch yet, using the vault committed on main"
+          fi
 
       - name: Unpack vault
         env:
