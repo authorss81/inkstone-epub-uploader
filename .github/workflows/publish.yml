@@ -113,8 +113,8 @@ jobs:
             echo "- finished: ${{ steps.publish.outputs.finished || 'false' }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload failure artifacts
-        if: failure()
+      - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: inkstone-debug-${{ github.run_number }}

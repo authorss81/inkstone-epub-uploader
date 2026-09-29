@@ -433,6 +433,29 @@ export class Inkstone {
 
   // Each target is either { name: /regex/ } matched against the accessible button name, or
   // { css: 'selector' }. Labels move around between Inkstone builds, so try several.
+  // When a button we expected is not there, print what actually is. Far more useful than a
+  // screenshot alone, and it is what makes a selector break diagnosable from the log.
+  async listButtons(label) {
+    const found = await this.page
+      .locator('button:visible, a:visible, [role="button"]:visible')
+      .evaluateAll((els) =>
+        els
+          .map((e) => ({
+            tag: e.tagName,
+            text: (e.innerText || e.value || '').replace(/\s+/g, ' ').trim().slice(0, 40),
+            cls: (e.className || '').toString().slice(0, 60),
+            disabled: e.disabled === true,
+          }))
+          .filter((b) => b.text),
+      )
+      .catch(() => []);
+    warn(`${label}: ${found.length} visible buttons`);
+    for (const b of found) {
+      warn(`   <${b.tag}> "${b.text}"${b.disabled ? ' [disabled]' : ''} class="${b.cls}"`);
+    }
+    return found;
+  }
+
   async clickButton(targets, { timeout = 60000 } = {}) {
     const budget = Math.max(4000, Math.floor(timeout / targets.length));
     for (const target of targets) {
@@ -471,6 +494,7 @@ export class Inkstone {
       { css: 'button.g_header_btn' },
     ]);
     if (!saved) {
+      await this.listButtons(`no Save button on chapter ${chapter.index}`);
       await this.snapshot(`save-failed-${chapter.index}`);
       throw new InkstoneError(`could not find the Save button for chapter ${chapter.index}`);
     }
@@ -483,6 +507,7 @@ export class Inkstone {
     log(`publishing chapter ${chapter.index}`);
     const opened = await this.clickButton([{ name: /^publish$/i }, { name: /^publish now$/i }]);
     if (!opened) {
+      await this.listButtons(`no Publish button on chapter ${chapter.index}`);
       await this.snapshot(`publish-button-missing-${chapter.index}`);
       throw new InkstoneError(`could not find the Publish button for chapter ${chapter.index}`);
     }
