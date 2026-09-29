@@ -54,6 +54,17 @@ function loadJson(path, fallback = null) {
   }
 }
 
+// Playwright persists each cookie's absolute expiry into storageState, so a snapshot taken an hour
+// ago is dead the moment you restore it. The token itself is refreshed by inkstone on every API
+// response, so the hour slides; drop the stale timestamp and let the keepalive hold it open.
+function withoutStaleExpiry(state) {
+  if (!state?.cookies) return state;
+  const cookies = state.cookies.map((c) => ({ ...c, expires: -1 }));
+  return { ...state, cookies };
+}
+
+const KEEPALIVE_MS = Number(process.env.KEEPALIVE_SECONDS || 240) * 1000;
+
 export class Inkstone {
   constructor({ bookId, sessionPath, artifactPath, headless = true, profileDir = null }) {
     this.bookId = String(bookId);
@@ -94,7 +105,7 @@ export class Inkstone {
       });
       this.page = this.context.pages()[0] ?? (await this.context.newPage());
     } else {
-      const storageState = loadJson(this.sessionPath);
+      const storageState = withoutStaleExpiry(loadJson(this.sessionPath));
       this.browser = await chromium.launch({
         headless: this.headless,
         ...(channel ? { channel } : {}),
@@ -112,6 +123,7 @@ export class Inkstone {
   }
 
   async close() {
+    this.stopKeepalive();
     if (this.usingProfile) await this.context?.close();
     else await this.browser?.close();
   }
@@ -188,6 +200,24 @@ export class Inkstone {
 
   async isAuthenticated() {
     return Boolean(await this.currentUser());
+  }
+
+  // Inkstone's own SPA pings this endpoint every 5 minutes for exactly this reason. Holding the
+  // session open matters because the auth token's 1 hour expiry is only refreshed by activity.
+  startKeepalive() {
+    if (this.usingProfile || this.keepaliveTimer) return;
+    this.keepaliveTimer = setInterval(async () => {
+      const { body } = await this.apiGet('/tauthorweb/login/penname').catch(() => ({ body: null }));
+      const alive = body?.returnCode === 200 || body?.code === 0;
+      this.sessionAlive = alive;
+      log(alive ? 'keepalive ok' : 'keepalive failed, the session may have expired');
+    }, KEEPALIVE_MS);
+    this.keepaliveTimer.unref?.();
+  }
+
+  stopKeepalive() {
+    if (this.keepaliveTimer) clearInterval(this.keepaliveTimer);
+    this.keepaliveTimer = null;
   }
 
   async ensureLoggedIn({ email, password }) {

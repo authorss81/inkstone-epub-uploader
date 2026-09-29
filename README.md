@@ -78,17 +78,59 @@ Inkstone, then switch to `publish:all`.
 If the resume point cannot be determined the run stops and asks, rather than guessing chapter 1 and
 duplicating your existing chapters.
 
-## GitHub Actions mode
+## How it signs in
 
-Only for accounts that have a real password. The workflow unpacks the vault, publishes, seals
-progress back into `vault/`, and dispatches itself with `gh workflow run` until done.
+Inkstone accounts are usually created through Google, Facebook or LINE. Those accounts have **no
+password** — Webnovel's reset service reports them as "Account does not exist" — so no script can
+log in with one. Two supported ways around that:
+
+**A. Upload from your own PC, no password needed (simplest).** Sign in once through a real browser
+window; the profile is reused forever.
+
+```powershell
+$env:BROWSER_CHANNEL = "msedge"        # or chrome; skips the Chromium download
+$env:INKSTONE_BOOK_ID = "12345678"
+npm run signin                          # sign in with Google by hand, then it just works
+$env:MAX_CHAPTERS = 50
+npm run publish:all                     # loops in batches until the book is finished
+```
+
+**B. Cookie injection, so the uploading itself runs on GitHub Actions.** You only spend ~1 minute
+on your PC to capture the session; the workflow then does the rest unattended.
+
+```powershell
+$env:BROWSER_CHANNEL = "msedge"
+$env:VAULT_PASSPHRASE = Read-Host "vault passphrase"
+$env:VAULT_DIR = "vault"
+npm run grab                            # sign in with Google, cookies are sealed into vault/
+Remove-Item Env:\VAULT_PASSPHRASE
+git add vault && git commit -m "chore: refresh inkstone session" && git push
+```
+
+Then run the workflow as usual.
+
+### Why the session survives longer than an hour
+
+`inkstone_auth_token` is written with a one-hour expiry, but Inkstone re-issues it from the
+`Authorization` header of *every* API response, so the deadline slides rather than landing. Two
+things make that work:
+
+- Restored snapshots get their stale `expires` timestamp stripped, otherwise Playwright would treat
+  an old capture as already dead and drop the cookies on load.
+- A keepalive pings `/tauthorweb/login/penname` every 4 minutes, the same endpoint Inkstone's own
+  app uses to hold sessions open. `npm run grab` prints whether the token is a JWT and how long the
+  server says it has left, so you know whether the keepalive is enough.
+
+If the keepalive ever reports failure mid-run, the run stops with a clear message rather than
+failing chapter by chapter. Re-run `npm run grab` and it continues from where it stopped.
+
+## GitHub Actions setup
 
 | Secret | Value |
 | --- | --- |
 | `VAULT_PASSPHRASE` | 20+ random characters |
 | `INKSTONE_BOOK_ID` | numeric book id |
-| `INKSTONE_EMAIL` | only for password-based accounts |
-| `INKSTONE_PASSWORD` | only for password-based accounts |
+| `INKSTONE_EMAIL` / `INKSTONE_PASSWORD` | only if the account genuinely has a password |
 
 Because the workflow runs in a public repo its runner minutes are unmetered, while the book and the
 session stay encrypted in `vault/`. See [`vault/README.md`](vault/README.md).

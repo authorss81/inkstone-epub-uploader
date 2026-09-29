@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const MAGIC = Buffer.from('INKVAULT1', 'ascii');
 const SALT_BYTES = 16;
@@ -104,16 +105,19 @@ function pack() {
   return changed;
 }
 
-const command = process.argv[2];
-try {
-  if (command === 'unpack') log(`unpacked ${unpack()} file(s) into ${WORK_DIR}`);
-  else if (command === 'pack') log(`packed ${pack()} file(s) into ${VAULT_DIR}`);
-  else if (command === 'seal') {
-    const [input, output] = process.argv.slice(3);
-    encrypt(readFileSync(input), output);
-    log(`sealed ${input} -> ${output}`);
-  } else throw new Error('usage: node src/vault.mjs <unpack|pack|seal input output>');
-} catch (err) {
-  console.error(`[vault] ${err.message}`);
-  process.exit(1);
+// Only act as a CLI when invoked directly; other modules import encrypt/decrypt from here.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const command = process.argv[2];
+  try {
+    if (command === 'unpack') log(`unpacked ${unpack()} file(s) into ${WORK_DIR}`);
+    else if (command === 'pack') log(`packed ${pack()} file(s) into ${VAULT_DIR}`);
+    else if (command === 'seal') {
+      const [input, output] = process.argv.slice(3);
+      encrypt(readFileSync(input), output);
+      log(`sealed ${input} -> ${output}`);
+    } else throw new Error('usage: node src/vault.mjs <unpack|pack|seal input output>');
+  } catch (err) {
+    console.error(`[vault] ${err.message}`);
+    process.exit(1);
+  }
 }

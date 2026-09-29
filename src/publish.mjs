@@ -156,6 +156,7 @@ async function main() {
     });
 
     if (!next) {
+      inkstone.startKeepalive();
       const detected = await inkstone.publishedCount().catch((err) => {
         warn(`chapter count probe threw: ${err.message}`);
         return null;
@@ -193,6 +194,11 @@ async function main() {
       }
 
       try {
+        if (inkstone.sessionAlive === false) {
+          throw new InkstoneError(
+            'the Inkstone session expired mid-run (keepalive failed). Re-grab cookies or run npm run signin, then rerun.',
+          );
+        }
         await inkstone.publishChapter(chapter);
         published += 1;
         failures = 0;
