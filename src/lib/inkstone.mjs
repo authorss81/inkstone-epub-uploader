@@ -59,7 +59,11 @@ function loadJson(path, fallback = null) {
 // response, so the hour slides; drop the stale timestamp and let the keepalive hold it open.
 function withoutStaleExpiry(state) {
   if (!state?.cookies) return state;
-  const cookies = state.cookies.map((c) => ({ ...c, expires: -1 }));
+  const cookies = state.cookies
+    // Playwright refuses a cookie without a domain/path pair, and hand-edited exports often miss
+    // the path, so normalise before handing anything over.
+    .filter((c) => c && c.name && c.domain && (c.domain.includes('webnovel.com') || c.domain.includes('inkstone')))
+    .map((c) => ({ ...c, domain: c.domain, path: c.path || '/', expires: -1 }));
   return { ...state, cookies };
 }
 

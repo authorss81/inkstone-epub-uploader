@@ -45,6 +45,20 @@ function loadState() {
   }
 }
 
+// Returns the usable Inkstone cookies from the stored session, or null when there are none.
+function readSession() {
+  if (!existsSync(SESSION_PATH)) return null;
+  try {
+    const state = JSON.parse(readFileSync(SESSION_PATH, 'utf8'));
+    const cookies = (state.cookies ?? []).filter(
+      (c) => c.name === 'inkstone_auth_token' && c.domain.includes('webnovel.com'),
+    );
+    return cookies.length ? state.cookies : null;
+  } catch {
+    return null;
+  }
+}
+
 function saveState(state) {
   mkdirSync(dirname(STATE_PATH), { recursive: true });
   state.updatedAt = new Date().toISOString();
@@ -127,13 +141,19 @@ async function main() {
 
   const bookId = process.env.INKSTONE_BOOK_ID;
   if (!bookId) throw new Error('INKSTONE_BOOK_ID is not set');
-  if (!PROFILE_DIR && !process.env.INKSTONE_EMAIL) {
+
+  // Three ways to be authenticated: a saved browser profile, a stored cookie session, or an
+  // email+password account. Check all three before giving up, and say which one is missing.
+  const session = readSession();
+  if (!PROFILE_DIR && !session && !process.env.INKSTONE_EMAIL) {
     throw new Error(
-      'no way to sign in: neither a saved browser profile nor INKSTONE_EMAIL is configured. ' +
-        'If your account uses Google or another social login there is no password to use, so run ' +
-        '"npm run signin" once on your own machine to create the profile, then keep using it.',
+      'no way to sign in: there is no browser profile at PROFILE_DIR, no Inkstone session in ' +
+        `${SESSION_PATH}, and no INKSTONE_EMAIL. Export the cookies from a signed-in browser with\n` +
+        '  node src/import-cookies.mjs <cookies.json>\n' +
+        'or, for a password account, set INKSTONE_EMAIL and INKSTONE_PASSWORD.',
     );
   }
+  if (!PROFILE_DIR && session) log(`using the stored cookie session (${session.length} cookies)`);
 
   mkdirSync(ARTIFACT_DIR, { recursive: true });
   const inkstone = new Inkstone({
