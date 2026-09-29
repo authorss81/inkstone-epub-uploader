@@ -37,7 +37,7 @@ const timezone = -(new Date().getTimezoneOffset() / 60).toFixed(2);
 
 async function allDrafts() {
   const out = [];
-  for (let pageNo = 1; pageNo <= 200; pageNo += 1) {
+  for (let pageNo = 1; pageNo <= 500; pageNo += 1) {
     const { body } = await inkstone.apiGet('/tauthorweb/chapter/paginateDraftList', {
       CBID: bookId,
       timezone,
@@ -49,18 +49,21 @@ async function allDrafts() {
       break;
     }
 
-    // Show the shape, because Inkstone's UI count and this endpoint have been seen to disagree.
-    const keys = Object.keys(result);
-    const records = result.records ?? result.list ?? [];
-    console.error(
-      `[cleanup] page ${pageNo}: result keys [${keys.join(', ')}] totalCount=${result.totalCount} records=${records.length}`,
+    // Each record is a VOLUME, and the drafts are nested inside its chapterInfoVos. Counting
+    // records instead of chapters is what made this report 1 draft when the UI said 6.
+    const records = result.records ?? [];
+    const chapters = records.flatMap((rec) =>
+      Array.isArray(rec.chapterInfoVos) && rec.chapterInfoVos.length ? rec.chapterInfoVos : [rec],
     );
+
     if (pageNo === 1) {
-      console.error(`[cleanup] first record: ${JSON.stringify(records[0] ?? null).slice(0, 400)}`);
+      console.log(
+        `[cleanup] volumes on page 1: ${records.length}, drafts inside them: ${chapters.length}, totalCount: ${result.totalCount}`,
+      );
     }
 
-    out.push(...records);
-    if (!records.length) break;
+    out.push(...chapters);
+    if (!chapters.length) break;
     if (result.totalCount !== undefined && out.length >= result.totalCount) break;
   }
   return out;
