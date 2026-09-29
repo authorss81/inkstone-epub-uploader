@@ -78,6 +78,8 @@ jobs:
       - name: Publish
         id: publish
         env:
+          # The progress hook seals and pushes mid-run, so it needs the passphrase here too.
+          VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
           ASSETS_DIR: ${{ github.workspace }}/work
           EPUB_PATH: ${{ github.workspace }}/work/book.epub
           STATE_PATH: ${{ github.workspace }}/work/state/state.json
@@ -131,7 +133,8 @@ jobs:
           gh workflow run publish.yml \
             --ref "${{ github.ref_name }}" \
             -f book_id="${{ inputs.book_id }}" \
-            -f start_chapter=0 \
-            -f end_chapter=${{ inputs.end_chapter }} \
-            -f max_chapters=${{ inputs.max_chapters }} \
-            -f delay_seconds=${{ inputs.delay_seconds }}"
+            -f start_chapter="0" \
+            -f end_chapter="${{ inputs.end_chapter }}" \
+            -f max_chapters="${{ inputs.max_chapters }}" \
+            -f delay_seconds="${{ inputs.delay_seconds }}" \
+            -f dry_run="false"
