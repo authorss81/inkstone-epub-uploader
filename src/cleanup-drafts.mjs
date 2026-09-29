@@ -45,12 +45,23 @@ async function allDrafts() {
     });
     const result = body?.result;
     if (!result) {
-      console.error('unexpected response from paginateDraftList:', JSON.stringify(body).slice(0, 300));
+      console.error('unexpected response from paginateDraftList:', JSON.stringify(body).slice(0, 500));
       break;
     }
-    const records = result.records ?? [];
+
+    // Show the shape, because Inkstone's UI count and this endpoint have been seen to disagree.
+    const keys = Object.keys(result);
+    const records = result.records ?? result.list ?? [];
+    console.error(
+      `[cleanup] page ${pageNo}: result keys [${keys.join(', ')}] totalCount=${result.totalCount} records=${records.length}`,
+    );
+    if (pageNo === 1) {
+      console.error(`[cleanup] first record: ${JSON.stringify(records[0] ?? null).slice(0, 400)}`);
+    }
+
     out.push(...records);
-    if (!records.length || out.length >= (result.totalCount ?? 0)) break;
+    if (!records.length) break;
+    if (result.totalCount !== undefined && out.length >= result.totalCount) break;
   }
   return out;
 }
