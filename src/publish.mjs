@@ -28,10 +28,16 @@ const SESSION_PATH = resolve(process.env.SESSION_PATH ?? join(ASSETS_DIR, 'sessi
 const ARTIFACT_DIR = resolve(process.env.ARTIFACT_DIR ?? 'artifacts');
 const PROFILE_DIR = process.env.PROFILE_DIR ? resolve(process.env.PROFILE_DIR) : null;
 
+// Tuned from real run timings: each chapter costs ~10s of browser work, so the delay dominated
+// everything. 10s keeps a comfortable margin under Inkstone's rate limits while finishing the book
+// roughly twice as fast as the original 45s pacing.
+const DEFAULT_MAX_CHAPTERS = 200;
+const DEFAULT_DELAY_SECONDS = 10;
+
 const START_INPUT = num(process.env.START_CHAPTER);
 const END_INPUT = num(process.env.END_CHAPTER);
-const MAX_CHAPTERS = num(process.env.MAX_CHAPTERS, 50);
-const DELAY_SECONDS = num(process.env.DELAY_SECONDS, 45);
+const MAX_CHAPTERS = num(process.env.MAX_CHAPTERS, DEFAULT_MAX_CHAPTERS);
+const DELAY_SECONDS = num(process.env.DELAY_SECONDS, DEFAULT_DELAY_SECONDS);
 const COMMIT_EVERY = num(process.env.COMMIT_EVERY, 5);
 const RESTART_EVERY = num(process.env.RESTART_EVERY, 25);
 const MAX_FAILURES = num(process.env.MAX_FAILURES, 3);

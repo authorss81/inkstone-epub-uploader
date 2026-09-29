@@ -164,8 +164,8 @@ session stay encrypted in `vault/`. See [`vault/README.md`](vault/README.md).
 | --- | --- | --- |
 | `INKSTONE_BOOK_ID` | — | required, the numeric book id |
 | `PROFILE_DIR` | — | enables profile mode; `npm run signin` defaults it to `.profile` |
-| `MAX_CHAPTERS` | `50` | chapters per batch |
-| `DELAY_SECONDS` | `45` | pause between chapters |
+| `MAX_CHAPTERS` | `200` | chapters per batch |
+| `DELAY_SECONDS` | `10` | pause between chapters |
 | `START_CHAPTER` / `END_CHAPTER` | `0` | `0` means auto-detect / end of book |
 | `HEADLESS` | `1` | set `0` to watch the browser work |
 | `BROWSER_CHANNEL` | — | `chrome` or `msedge` to use an installed browser |

@@ -18,11 +18,11 @@ on:
       max_chapters:
         description: 'Chapters to publish in this run'
         required: false
-        default: '50'
+        default: '200'
       delay_seconds:
         description: 'Pause between chapters'
         required: false
-        default: '45'
+        default: '10'
       dry_run:
         description: 'Unpack the EPUB and print a preview without uploading'
         type: boolean
