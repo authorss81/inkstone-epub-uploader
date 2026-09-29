@@ -73,6 +73,9 @@ export class Inkstone {
     this.headless = headless;
     this.profileDir = profileDir;
     this.authToken = '';
+    this.rotatedToken = '';
+    this.tokenRotations = 0;
+    this.sessionAlive = true;
     this.context = null;
     this.page = null;
   }
@@ -138,9 +141,21 @@ export class Inkstone {
     if (this.usingProfile) return;
     if (!this.sessionPath) return;
     mkdirSync(dirname(this.sessionPath), { recursive: true });
+
     const state = await this.context.storageState();
+
+    // Write the newest rotated token back into the stored cookie, so the next run starts with an
+    // hour of life rather than whatever was captured when the cookies were exported.
+    if (this.authToken) {
+      state.cookies = state.cookies.map((c) =>
+        c.name === 'inkstone_auth_token' ? { ...c, value: this.authToken, expires: -1 } : c,
+      );
+    }
+
     writeFileSync(this.sessionPath, JSON.stringify(state, null, 2));
-    log('session persisted');
+    log(
+      `session persisted${this.tokenRotations ? ` (${this.tokenRotations} token rotation(s) folded in)` : ''}`,
+    );
   }
 
   async clearSession() {
@@ -155,8 +170,10 @@ export class Inkstone {
 
   async refreshAuthToken() {
     const cookies = await this.context.cookies([BASE, PASSPORT_HOST]);
-    const token = cookies.find((c) => c.name === 'inkstone_auth_token');
-    this.authToken = token?.value ?? '';
+    const jarToken = cookies.find((c) => c.name === 'inkstone_auth_token')?.value ?? '';
+    // A token the server just signed always beats whatever is still sitting in the cookie jar,
+    // otherwise a later refreshAuthToken would quietly downgrade us back to the stale one.
+    this.authToken = this.rotatedToken || jarToken;
     return this.authToken;
   }
 
@@ -170,12 +187,25 @@ export class Inkstone {
     };
   }
 
+  // The auth token is a JWT that expires server-side after an hour. Inkstone hands back a freshly
+  // signed one in the Authorization header of every response (its own SPA overwrites its cookie the
+  // same way), so we must keep using the newest token we have seen or every call starts failing.
+  captureToken(res) {
+    const fresh = res.headers?.()?.authorization;
+    if (!fresh || fresh === this.authToken) return;
+    this.authToken = fresh;
+    this.rotatedToken = fresh;
+    this.tokenRotations = (this.tokenRotations ?? 0) + 1;
+    if (this.tokenRotations === 1) log('auth token rotated by the server, using the fresh one from now on');
+  }
+
   async apiGet(path, params = {}) {
     const url = new URL(path, BASE);
     for (const [k, v] of Object.entries(params)) {
       if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
     }
     const res = await this.context.request.get(url.toString(), { headers: this.apiHeaders() });
+    this.captureToken(res);
     return { status: res.status(), body: await safeJson(res) };
   }
 
@@ -184,6 +214,7 @@ export class Inkstone {
       headers: this.apiHeaders(),
       data,
     });
+    this.captureToken(res);
     return { status: res.status(), body: await safeJson(res) };
   }
 

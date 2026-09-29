@@ -47,11 +47,14 @@ function describeToken(token) {
     if (exp) {
       const minutes = Math.round((exp * 1000 - Date.now()) / 60000);
       console.log(`[import] server-side expiry: ${new Date(exp * 1000).toISOString()} (${minutes} minutes from now)`);
-      console.log(
-        minutes < 90
-          ? '[import] the keepalive matters: re-export cookies every couple of hours to be safe'
-          : '[import] the keepalive should comfortably hold this open',
-      );
+      if (minutes <= 0) {
+        console.error('[import] WARNING: this token has ALREADY expired, the server will reject it. Re-export the cookies.');
+      } else if (minutes < 90) {
+        console.log('[import] the run rotates the token on every response and saves the fresh one back,');
+        console.log('[import] so starting with a short life is fine as long as the first request lands quickly.');
+      } else {
+        console.log('[import] plenty of headroom.');
+      }
     }
     return;
   }

@@ -127,18 +127,22 @@ Then run the workflow as usual.
 
 ### Why the session survives longer than an hour
 
-`inkstone_auth_token` is written with a one-hour expiry, but Inkstone re-issues it from the
-`Authorization` header of *every* API response, so the deadline slides rather than landing. Two
-things make that work:
+`inkstone_auth_token` is a **JWT with a 60 minute server-side expiry**, so a stored copy does
+become unusable after an hour. What saves it is that Inkstone hands back a **freshly signed token in
+the `Authorization` header of every response** — its own SPA overwrites its cookie the same way. The
+uploader therefore:
 
-- Restored snapshots get their stale `expires` timestamp stripped, otherwise Playwright would treat
-  an old capture as already dead and drop the cookies on load.
-- A keepalive pings `/tauthorweb/login/penname` every 4 minutes, the same endpoint Inkstone's own
-  app uses to hold sessions open. `npm run grab` prints whether the token is a JWT and how long the
-  server says it has left, so you know whether the keepalive is enough.
+- uses whatever token the server last signed, not the one it started with,
+- pings `/tauthorweb/login/penname` every 4 minutes to hold the underlying session open, and
+- writes the newest token back into `vault/session/storage-state.json.enc` at the end of a run.
+
+Because each run inherits a token that was signed minutes ago rather than hours ago, a chain of runs
+keeps itself alive indefinitely. You only need to re-export cookies after a long idle gap, or if a
+run reports the session expired. The logs say `auth token rotated by the server` the first time a
+rotation happens and `session persisted (N token rotation(s) folded in)` at the end.
 
 If the keepalive ever reports failure mid-run, the run stops with a clear message rather than
-failing chapter by chapter. Re-run `npm run grab` and it continues from where it stopped.
+failing chapter by chapter. Re-export the cookies and it continues from where it stopped.
 
 ## GitHub Actions setup
 
