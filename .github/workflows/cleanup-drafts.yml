@@ -1,0 +1,90 @@
+name: Clean up leftover drafts
+
+on:
+  workflow_dispatch:
+    inputs:
+      delete:
+        description: 'Actually move the drafts to the trash (recoverable). Leave unchecked for a preview.'
+        type: boolean
+        required: false
+        default: false
+      only:
+        description: 'Delete only drafts whose title contains this text (optional safety filter)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: inkstone-publish
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Configure git
+        run: |
+          git config user.name "inkstone-uploader"
+          git config user.email "actions@github.com"
+          chmod +x scripts/seal-and-push.sh
+
+      - name: Unpack vault
+        env:
+          VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
+        run: node src/vault.mjs unpack
+
+      - name: Clean up drafts
+        id: clean
+        env:
+          VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
+          SESSION_PATH: ${{ github.workspace }}/work/session/storage-state.json
+          ARTIFACT_DIR: ${{ github.workspace }}/artifacts
+          INKSTONE_BOOK_ID: ${{ secrets.INKSTONE_BOOK_ID }}
+        run: |
+          if [ "${{ inputs.delete }}" = "true" ]; then
+            node src/cleanup-drafts.mjs --delete ${{ inputs.only && format('--only {0}', inputs.only) || '' }}
+          else
+            node src/cleanup-drafts.mjs ${{ inputs.only && format('--only {0}', inputs.only) || '' }}
+          fi | tee cleanup-output.txt
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Draft cleanup"
+            echo ""
+            echo '```'
+            cat cleanup-output.txt 2>/dev/null || echo "(no output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Seal and push
+        if: always()
+        env:
+          VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
+        run: |
+          ./scripts/seal-and-push.sh "chore: session refresh after draft cleanup"

@@ -15,6 +15,8 @@
     "publish:all": "node src/publish.mjs",
     "inspect": "node src/inspect.mjs",
     "probe": "node src/probe-login.mjs",
+    "cleanup:drafts": "node src/cleanup-drafts.mjs",
+    "check:workflows": "python check-workflows.py",
     "vault:unpack": "node src/vault.mjs unpack",
     "vault:pack": "node src/vault.mjs pack",
     "vault:seal": "node src/vault.mjs seal"
