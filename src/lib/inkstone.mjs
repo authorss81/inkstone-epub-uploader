@@ -191,16 +191,26 @@ export class Inkstone {
     };
   }
 
-  // The auth token is a JWT that expires server-side after an hour. Inkstone hands back a freshly
-  // signed one in the Authorization header of every response (its own SPA overwrites its cookie the
-  // same way), so we must keep using the newest token we have seen or every call starts failing.
-  captureToken(res) {
-    const fresh = res.headers?.()?.authorization;
+  // The auth token is a JWT that expires server-side after an hour. Inkstone's own SPA reads
+  // `Authorization` off the parsed response body and overwrites its cookie with it, so the token
+  // is refreshed by activity. Check both the headers and the body, because the body is where the
+  // app actually looks, and keep using the newest token we have seen.
+  captureToken(res, body) {
+    const fresh = res?.headers?.()?.authorization || body?.Authorization || body?.authorization;
+    if (body && typeof body === 'object' && this.probedRotation !== true) {
+      this.probedRotation = true;
+      this.sawBodyToken = Boolean(fresh);
+      log(
+        fresh
+          ? 'the server does hand back a fresh token, found it in the response body'
+          : 'no token in the response, the session is being held open by the keepalive alone',
+      );
+    }
     if (!fresh || fresh === this.authToken) return;
     this.authToken = fresh;
     this.rotatedToken = fresh;
     this.tokenRotations = (this.tokenRotations ?? 0) + 1;
-    if (this.tokenRotations === 1) log('auth token rotated by the server, using the fresh one from now on');
+    log(`auth token rotated by the server (rotation #${this.tokenRotations}), using the fresh one`);
   }
 
   async apiGet(path, params = {}) {
@@ -209,8 +219,9 @@ export class Inkstone {
       if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
     }
     const res = await this.context.request.get(url.toString(), { headers: this.apiHeaders() });
-    this.captureToken(res);
-    return { status: res.status(), body: await safeJson(res) };
+    const body = await safeJson(res);
+    this.captureToken(res, body);
+    return { status: res.status(), body };
   }
 
   async apiPost(path, data = {}) {
@@ -218,8 +229,9 @@ export class Inkstone {
       headers: this.apiHeaders(),
       data,
     });
-    this.captureToken(res);
-    return { status: res.status(), body: await safeJson(res) };
+    const body = await safeJson(res);
+    this.captureToken(res, body);
+    return { status: res.status(), body };
   }
 
   async currentUser() {
