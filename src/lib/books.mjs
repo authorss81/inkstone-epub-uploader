@@ -60,8 +60,12 @@ export function summary(config = loadBooks()) {
   return config.books
     .map((book) => {
       const state = stateFor(book);
-      const status = state.done ? 'done' : state.nextChapter ? `chapter ${state.nextChapter - 1}` : 'not started';
-      return `  [${book.id ?? '?'}] ${(book.title ?? book.bookId).padEnd(40)} ${status}`;
+      const status = state.done
+        ? `done at ${state.sourceChapters ? `${state.sourceChapters} chapters` : 'an unknown length'}`
+        : state.nextChapter
+          ? `chapter ${state.nextChapter - 1}`
+          : 'not started';
+      return `  [${book.id ?? '?'}] ${(book.title ?? book.bookId).padEnd(30)} ${status}`;
     })
     .join('\n');
 }
