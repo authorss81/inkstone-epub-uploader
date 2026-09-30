@@ -6,6 +6,7 @@ import { Inkstone, InkstoneError, sleep } from './lib/inkstone.mjs';
 import { epubPathFor, isDone, loadBooks, nextBook, stateFor, statePathFor, summary } from './lib/books.mjs';
 
 function listFiles(dir, out = []) {
+  if (!existsSync(dir)) return out;
   for (const name of readdirSync(dir)) {
     const full = join(dir, name);
     if (statSync(full).isDirectory()) listFiles(full, out);
@@ -139,10 +140,10 @@ async function main() {
   log(`books:\n${summary(config)}`);
 
   if (!existsSync(EPUB_PATH)) {
-    const found = existsSync(WORK_DIR) ? listFiles(join(WORK_DIR, 'vault')).slice(0, 12) : [];
+    const found = listFiles(WORK_DIR).slice(0, 12);
     throw new Error(
       `EPUB not found for book "${target.title ?? BOOK_ID}": expected ${EPUB_PATH}` +
-        (found.length ? `. Files present in the vault: ${found.join(', ')}` : '. The vault is empty.'),
+        (found.length ? `. Files actually unpacked: ${found.join(', ')}` : ` Nothing was unpacked into ${WORK_DIR}.`),
     );
   }
 

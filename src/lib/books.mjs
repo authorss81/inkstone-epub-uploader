@@ -30,7 +30,9 @@ export function loadBooks() {
 }
 
 export const statePathFor = (bookId) => join(WORK_DIR, 'state', `${bookId}.json`);
-export const epubPathFor = (book) => join(WORK_DIR, 'vault', book.epub);
+// vault.mjs unpacks <vault>/<path>.enc to <work>/<path>, so the book path mirrors the vault path
+// with the .enc suffix dropped. It is not nested under an extra "vault" directory.
+export const epubPathFor = (book) => join(WORK_DIR, book.epub.replace(/\.enc$/, ''));
 
 function readState(path) {
   if (!existsSync(path)) return { nextChapter: 0, published: [] };
