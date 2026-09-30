@@ -34,6 +34,11 @@ export const statePathFor = (bookId) => join(WORK_DIR, 'state', `${bookId}.json`
 // with the .enc suffix dropped. It is not nested under an extra "vault" directory.
 export const epubPathFor = (book) => join(WORK_DIR, book.epub.replace(/\.enc$/, ''));
 
+// Inkstone caps how many novels one account may own, so a second account needs its own session.
+// Books with no explicit account share the "main" one.
+export const accountFor = (book) => book?.account || 'main';
+export const sessionPathFor = (book) => join(WORK_DIR, 'session', `${accountFor(book)}.json`);
+
 function readState(path) {
   if (!existsSync(path)) return { nextChapter: 0, published: [] };
   try {

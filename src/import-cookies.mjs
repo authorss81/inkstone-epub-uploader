@@ -62,11 +62,13 @@ function describeToken(token) {
 }
 
 const [inputPath, vaultDirArg] = process.argv.slice(2);
-const VAULT_DIR = vaultDirArg || process.env.VAULT_DIR || 'vault';
-const OUT = join(VAULT_DIR, 'session', 'storage-state.json.enc');
+const accountIndex = process.argv.indexOf('--account');
+const account = accountIndex > -1 ? process.argv[accountIndex + 1] : 'main';
+const VAULT_DIR = vaultDirArg && !vaultDirArg.startsWith('--') ? vaultDirArg : process.env.VAULT_DIR || 'vault';
+const OUT = join(VAULT_DIR, 'session', `${account}.json.enc`);
 
 if (!inputPath) {
-  console.error('usage: node src/import-cookies.mjs <cookies.json> [vaultDir]');
+  console.error('usage: node src/import-cookies.mjs <cookies.json> [vaultDir] [--account name]');
   console.error('  set VAULT_PASSPHRASE first so the cookies can be encrypted');
   process.exit(1);
 }
@@ -112,6 +114,6 @@ encrypt(readFileSync(plain), OUT);
 rmSync(tmp, { recursive: true, force: true });
 rmSync(plain, { force: true });
 
-console.log(`[import] sealed into ${OUT}`);
+console.log(`[import] sealed into ${OUT} for account "${account}"`);
 console.log('[import] now commit it:');
 console.log('         git add vault && git commit -m "chore: refresh inkstone session" && git push');

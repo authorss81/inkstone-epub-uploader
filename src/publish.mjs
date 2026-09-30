@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statS
 import { dirname, join, relative, resolve } from 'node:path';
 import { loadBook } from './lib/epub.mjs';
 import { Inkstone, InkstoneError, sleep } from './lib/inkstone.mjs';
-import { epubPathFor, isDone, loadBooks, nextBook, stateFor, statePathFor, summary } from './lib/books.mjs';
+import { accountFor, epubPathFor, isDone, loadBooks, nextBook, sessionPathFor, stateFor, statePathFor, summary } from './lib/books.mjs';
 
 function listFiles(dir, out = []) {
   if (!existsSync(dir)) return out;
@@ -25,7 +25,6 @@ const num = (value, fallback = 0) => {
 
 const ASSETS_DIR = resolve(process.env.ASSETS_DIR ?? 'work');
 const WORK_DIR = resolve(process.env.WORK_DIR ?? ASSETS_DIR);
-const SESSION_PATH = resolve(process.env.SESSION_PATH ?? join(WORK_DIR, 'session', 'storage-state.json'));
 const ARTIFACT_DIR = resolve(process.env.ARTIFACT_DIR ?? 'artifacts');
 const PROFILE_DIR = process.env.PROFILE_DIR ? resolve(process.env.PROFILE_DIR) : null;
 
@@ -54,10 +53,10 @@ function loadState(path) {
 }
 
 // Returns the usable Inkstone cookies from the stored session, or null when there are none.
-function readSession() {
-  if (!existsSync(SESSION_PATH)) return null;
+function readSession(path) {
+  if (!existsSync(path)) return null;
   try {
-    const state = JSON.parse(readFileSync(SESSION_PATH, 'utf8'));
+    const state = JSON.parse(readFileSync(path, 'utf8'));
     const cookies = (state.cookies ?? []).filter(
       (c) => c.name === 'inkstone_auth_token' && c.domain.includes('webnovel.com'),
     );
@@ -135,6 +134,8 @@ async function main() {
   const EPUB_PATH = epubPathFor(target);
   const STATE_PATH = statePathFor(target.bookId);
   const BOOK_ID = target.bookId;
+  const ACCOUNT = accountFor(target);
+  const SESSION_PATH = sessionPathFor(target);
 
   log(`book "${target.title ?? BOOK_ID}" (id ${target.id}, bookId ${BOOK_ID})`);
   log(`books:\n${summary(config)}`);
@@ -187,17 +188,21 @@ async function main() {
   const bookId = BOOK_ID;
 
   // Three ways to be authenticated: a saved browser profile, a stored cookie session, or an
-  // email+password account. Check all three before giving up, and say which one is missing.
-  const session = readSession();
+  // email+password account. Each Inkstone account keeps its own session, so a second account for
+  // more novels works by giving those books a different "account" in books.json.
+  const session = readSession(SESSION_PATH);
   if (!PROFILE_DIR && !session && !process.env.INKSTONE_EMAIL) {
     throw new Error(
-      'no way to sign in: there is no browser profile at PROFILE_DIR, no Inkstone session in ' +
-        `${SESSION_PATH}, and no INKSTONE_EMAIL. Export the cookies from a signed-in browser with\n` +
-        '  node src/import-cookies.mjs <cookies.json>\n' +
-        'or, for a password account, set INKSTONE_EMAIL and INKSTONE_PASSWORD.',
+      `no way to sign in: there is no browser profile at PROFILE_DIR, no Inkstone session for account ` +
+        `"${ACCOUNT}" at ${SESSION_PATH}, and no INKSTONE_EMAIL. Sign in to that Inkstone account in a ` +
+        'normal browser and export its cookies with\n' +
+        `  node src/import-cookies.mjs "C:\\path\\to\\cookies.json" --account ${ACCOUNT}\n` +
+        'then git add vault && git commit -m "chore: refresh session" && git push.',
     );
   }
-  if (!PROFILE_DIR && session) log(`using the stored cookie session (${session.length} cookies)`);
+  if (!PROFILE_DIR && session) {
+    log(`using the stored cookie session for account "${ACCOUNT}" (${session.length} cookies)`);
+  }
 
   mkdirSync(ARTIFACT_DIR, { recursive: true });
   const inkstone = new Inkstone({
