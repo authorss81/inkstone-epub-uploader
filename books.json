@@ -5,6 +5,12 @@
       "bookId": "36971609200011405",
       "title": "I Can Copy Talent",
       "epub": "book.epub.enc"
+    },
+    {
+      "id": 2,
+      "bookId": "37063137100600505",
+      "title": "Sequence Of Rain",
+      "epub": "book/book-37063137100600505.epub.enc"
     }
   ]
 }

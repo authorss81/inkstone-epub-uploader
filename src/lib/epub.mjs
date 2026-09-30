@@ -25,7 +25,8 @@ function resolvePath(baseDir, href) {
   return parts.join('/');
 }
 
-const NON_CHAPTER = /(^|[-_.])(cover|titlepage|title-page|copyright|frontmatter|front-matter|toc|nav|acknowledg(?:e)?ments?|contents|legal|dedicat(?:ion|e)|about|intro(?:duction)?|preface|foreword|book-info|metadata)([-_.]|\d*\.[^.]*$)/i;
+const NON_CHAPTER =
+  /(^|[-_.])(cover|title|titlepage|title-page|synopsis|blurb|summary|introduction|foreword|frontmatter|front-matter|toc|nav|copyright|acknowledg(?:e)?ments?|contents|legal|dedicat(?:ion|e)|about|intro(?:duction)?|preface|book-info|metadata)([-_.]|\d*\.[^.]*$)/i;
 
 function looksLikeFrontMatter(href) {
   const name = href.split('/').pop() ?? href;
