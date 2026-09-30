@@ -3,10 +3,6 @@ name: Publish EPUB chapters to Inkstone
 on:
   workflow_dispatch:
     inputs:
-      book_id:
-        description: 'Inkstone book id (leave empty to use the secret INKSTONE_BOOK_ID)'
-        required: false
-        default: ''
       start_chapter:
         description: 'EPUB chapter to start from (0 = resume automatically)'
         required: false
@@ -95,14 +91,11 @@ jobs:
         env:
           # The progress hook seals and pushes mid-run, so it needs the passphrase here too.
           VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
-          ASSETS_DIR: ${{ github.workspace }}/work
-          EPUB_PATH: ${{ github.workspace }}/work/book.epub
-          STATE_PATH: ${{ github.workspace }}/work/state/state.json
+          VAULT_DIR: ${{ github.workspace }}/vault
+          WORK_DIR: ${{ github.workspace }}/work
+          BOOKS_CONFIG: ${{ github.workspace }}/books.json
           SESSION_PATH: ${{ github.workspace }}/work/session/storage-state.json
           ARTIFACT_DIR: ${{ github.workspace }}/artifacts
-          INKSTONE_BOOK_ID: ${{ inputs.book_id || secrets.INKSTONE_BOOK_ID }}
-          INKSTONE_EMAIL: ${{ secrets.INKSTONE_EMAIL }}
-          INKSTONE_PASSWORD: ${{ secrets.INKSTONE_PASSWORD }}
           START_CHAPTER: ${{ inputs.start_chapter }}
           END_CHAPTER: ${{ inputs.end_chapter }}
           MAX_CHAPTERS: ${{ inputs.max_chapters }}
@@ -124,6 +117,7 @@ jobs:
           {
             echo "### Inkstone upload"
             echo ""
+            echo "- book: ${{ steps.publish.outputs.book || 'none left' }}"
             echo "- published this run: ${{ steps.publish.outputs.published || 0 }}"
             echo "- next EPUB chapter: ${{ steps.publish.outputs.next_chapter || 'unknown' }}"
             echo "- still to go: ${{ steps.publish.outputs.remaining || 0 }}"
@@ -147,7 +141,6 @@ jobs:
           echo "still ${{ steps.publish.outputs.remaining }} chapters left, dispatching the next run"
           gh workflow run publish.yml \
             --ref "${{ github.ref_name }}" \
-            -f book_id="${{ inputs.book_id }}" \
             -f start_chapter="0" \
             -f end_chapter="${{ inputs.end_chapter }}" \
             -f max_chapters="${{ inputs.max_chapters }}" \
