@@ -1,0 +1,79 @@
+name: Account status
+
+on:
+  workflow_dispatch:
+    inputs:
+      book_id:
+        description: 'Also report on this specific book id (optional)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: inkstone-publish
+  cancel-in-progress: false
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Restore vault
+        env:
+          VAULT_BRANCH: vault-state
+        run: |
+          git fetch --depth 1 origin "+refs/heads/${{ env.VAULT_BRANCH }}:refs/remotes/origin/${{ env.VAULT_BRANCH }}" 2>/dev/null || true
+          if git rev-parse --verify --quiet "origin/${{ env.VAULT_BRANCH }}" >/dev/null; then
+            git restore --source="origin/${{ env.VAULT_BRANCH }}" vault
+          fi
+
+      - name: Unpack vault
+        env:
+          VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
+        run: |
+          if [ -f work/session/storage-state.json ] && [ ! -f work/session/main.json ]; then
+            mv work/session/storage-state.json work/session/main.json
+          fi
+          node src/vault.mjs unpack
+
+      - name: Report
+        env:
+          VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
+          SESSION_PATH: ${{ github.workspace }}/work/session/main.json
+          ARTIFACT_DIR: ${{ github.workspace }}/artifacts
+          CHECK_BOOK_ID: ${{ inputs.book_id }}
+        run: node src/account-status.mjs | tee status-output.txt
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Account status"
+            echo ""
+            echo '```'
+            cat status-output.txt 2>/dev/null || echo "(no output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
