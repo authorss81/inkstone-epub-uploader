@@ -86,6 +86,15 @@ jobs:
           VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
         run: node src/vault.mjs unpack
 
+      - name: Migrate the legacy session filename
+        run: |
+          # Sessions used to live in one storage-state.json. They are now one file per Inkstone
+          # account, so a second account can carry more novels past the per-account book cap.
+          if [ -f work/session/storage-state.json ] && [ ! -f work/session/main.json ]; then
+            mv work/session/storage-state.json work/session/main.json
+            echo "migrated the session to work/session/main.json"
+          fi
+
       - name: Publish
         id: publish
         env:

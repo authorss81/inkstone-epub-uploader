@@ -1,8 +1,49 @@
 # inkstone-epub-uploader
 
 Publishes a chapter range from an EPUB to a **Webnovel Inkstone** book, fully automatically. No
-copy/paste, no clicking through a UI 3600 times. Each run uploads a batch, remembers where it got
-to, and carries on until the range is finished.
+copy/paste, no clicking through a UI thousands of times. Each run uploads a batch, remembers where
+it got to, and carries on until the range is finished.
+
+Handles **any number of novels**. `books.json` lists them in order; each run takes the first one
+that isn't finished, marks it `done` when it reaches the end, and never opens it again. The run
+after that picks up the next novel by itself.
+
+```json
+{
+  "books": [
+    { "id": 1, "bookId": "36971609200011405", "title": "I Can Copy Talent", "epub": "book.epub.enc" },
+    { "id": 2, "bookId": "98765432109876",  "title": "Second Novel",      "epub": "book/book-98765432109876.epub.enc" }
+  ]
+}
+```
+
+Book ids are public — they are in the URL of a published book — so they live in the repo. Only the
+Inkstone login has to be secret.
+
+## Adding a novel
+
+One command, on a machine that has the EPUB:
+
+```powershell
+Set-Location "C:\path\to\inkstone-epub-uploader"
+git pull
+$env:VAULT_PASSPHRASE = Read-Host "vault passphrase"
+$env:VAULT_DIR = "vault"
+$env:BOOKS_CONFIG = "books.json"
+node src/add-book.mjs --book-id 98765432109876 --title "Second Novel" --epub "C:\books\second.epub"
+Remove-Item Env:\VAULT_PASSPHRASE
+git add books.json vault
+git commit -m "feat: add Second Novel"
+git push
+```
+
+That seals the EPUB into the vault, appends the entry with the next free `id`, and prints the
+commit command. Then just run the workflow — it will skip novel 1 (already `done`) and start novel 2
+at chapter 1.
+
+**You do not need to re-export cookies for a new novel.** The Inkstone session belongs to your
+*account*, not to a book; one cookie set works for every book you own. Only the book id changes. You
+re-export only when the session itself dies, which the log tells you.
 
 ## Two ways to run it
 
@@ -152,8 +193,6 @@ failing chapter by chapter. Re-export the cookies and it continues from where it
 | Secret | Value |
 | --- | --- |
 | `VAULT_PASSPHRASE` | 20+ random characters |
-| `INKSTONE_BOOK_ID` | numeric book id |
-| `INKSTONE_EMAIL` / `INKSTONE_PASSWORD` | only if the account genuinely has a password |
 
 Because the workflow runs in a public repo its runner minutes are unmetered, while the book and the
 session stay encrypted in `vault/`. See [`vault/README.md`](vault/README.md).
@@ -162,7 +201,7 @@ session stay encrypted in `vault/`. See [`vault/README.md`](vault/README.md).
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `INKSTONE_BOOK_ID` | — | required, the numeric book id |
+| `INKSTONE_BOOK_ID` | — | ignored unless set; normally the book comes from `books.json` |
 | `PROFILE_DIR` | — | enables profile mode; `npm run signin` defaults it to `.profile` |
 | `MAX_CHAPTERS` | `200` | chapters per batch |
 | `DELAY_SECONDS` | `10` | pause between chapters |
