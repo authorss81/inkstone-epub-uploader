@@ -71,12 +71,17 @@ jobs:
 
       - name: Restore vault progress
         run: |
-          # Progress lives on its own branch, which only this workflow ever writes, so the
-          # checkout can never collide with a code push. Seed from main the first time.
+          # Restore ONLY the files the branch already knows about. Restoring the whole vault
+          # directory would delete books that were added to main since the branch was created.
           git fetch --depth 1 origin "+refs/heads/${{ env.VAULT_BRANCH }}:refs/remotes/origin/${{ env.VAULT_BRANCH }}" 2>/dev/null || true
           if git rev-parse --verify --quiet "origin/${{ env.VAULT_BRANCH }}" >/dev/null; then
-            echo "restoring vault from ${{ env.VAULT_BRANCH }}"
-            git restore --source="origin/${{ env.VAULT_BRANCH }}" vault
+            count=0
+            while IFS= read -r path; do
+              [ -n "$path" ] || continue
+              git restore --source="origin/${{ env.VAULT_BRANCH }}" -- "$path"
+              count=$((count + 1))
+            done < <(git ls-tree -r --name-only "origin/${{ env.VAULT_BRANCH }}" -- vault)
+            echo "restored $count vault file(s) from ${{ env.VAULT_BRANCH }}"
           else
             echo "no ${{ env.VAULT_BRANCH }} branch yet, using the vault committed on main"
           fi
