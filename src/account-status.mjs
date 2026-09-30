@@ -4,6 +4,7 @@ import { Inkstone } from './lib/inkstone.mjs';
 // and whether the account itself looks restricted. Nothing here writes anything.
 
 const bookId = process.env.CHECK_BOOK_ID || '';
+const MATCH = (process.env.MATCH_NAME || 'rain').toLowerCase();
 const inkstone = new Inkstone({
   bookId: bookId || '0',
   sessionPath: process.env.SESSION_PATH || null,
@@ -42,8 +43,18 @@ try {
         console.log(
           `         ${String(b.bookId).padEnd(20)} "${(b.bookName ?? b.name ?? '?').slice(0, 40)}" ` +
             `status=${b.status ?? '?'} words=${b.totalWords ?? b.wordCount ?? '?'} ` +
-            `vipStatus=${b.vipStatus ?? '?'}${b.createTime ? ` created=${b.createTime}` : ''}`,
+            `vipStatus=${b.vipStatus ?? '?'}`,
         );
+      }
+      // The id in this list is not always the same value as the CBID the chapter endpoints want,
+      // so dump the full record for anything matching, rather than guessing which field to trust.
+      const matches = list.filter((b) => {
+        const name = String(b.bookName ?? b.name ?? '');
+        return name.toLowerCase().includes(MATCH) || String(b.bookId) === bookId;
+      });
+      for (const m of matches) {
+        console.log(`[status] full record for "${m.bookName ?? m.name}" matching "${MATCH}":`);
+        console.log(`[status]   ${JSON.stringify(m)}`);
       }
     } else {
       console.log(`         keys: ${Object.keys(result).join(', ')}`);
