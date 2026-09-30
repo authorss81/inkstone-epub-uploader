@@ -3,6 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statS
 import { dirname, join, relative, resolve } from 'node:path';
 import { loadBook } from './lib/epub.mjs';
 import { Inkstone, InkstoneError, sleep } from './lib/inkstone.mjs';
+import { epubPathFor, isDone, loadBooks, nextBook, stateFor, statePathFor, summary } from './lib/books.mjs';
 
 function listFiles(dir, out = []) {
   for (const name of readdirSync(dir)) {
@@ -21,10 +22,9 @@ const num = (value, fallback = 0) => {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 };
 
-const ASSETS_DIR = resolve(process.env.ASSETS_DIR ?? 'assets');
-const EPUB_PATH = resolve(process.env.EPUB_PATH ?? join(ASSETS_DIR, 'book', 'book.epub'));
-const STATE_PATH = resolve(process.env.STATE_PATH ?? join(ASSETS_DIR, 'state', 'state.json'));
-const SESSION_PATH = resolve(process.env.SESSION_PATH ?? join(ASSETS_DIR, 'session', 'storage-state.json'));
+const ASSETS_DIR = resolve(process.env.ASSETS_DIR ?? 'work');
+const WORK_DIR = resolve(process.env.WORK_DIR ?? ASSETS_DIR);
+const SESSION_PATH = resolve(process.env.SESSION_PATH ?? join(WORK_DIR, 'session', 'storage-state.json'));
 const ARTIFACT_DIR = resolve(process.env.ARTIFACT_DIR ?? 'artifacts');
 const PROFILE_DIR = process.env.PROFILE_DIR ? resolve(process.env.PROFILE_DIR) : null;
 
@@ -43,10 +43,10 @@ const RESTART_EVERY = num(process.env.RESTART_EVERY, 25);
 const MAX_FAILURES = num(process.env.MAX_FAILURES, 3);
 const DRY_RUN = process.env.DRY_RUN === '1';
 
-function loadState() {
-  if (!existsSync(STATE_PATH)) return { nextChapter: 0, published: [] };
+function loadState(path) {
+  if (!existsSync(path)) return { nextChapter: 0, published: [] };
   try {
-    return JSON.parse(readFileSync(STATE_PATH, 'utf8'));
+    return JSON.parse(readFileSync(path, 'utf8'));
   } catch {
     return { nextChapter: 0, published: [] };
   }
@@ -66,10 +66,10 @@ function readSession() {
   }
 }
 
-function saveState(state) {
-  mkdirSync(dirname(STATE_PATH), { recursive: true });
+function saveState(path, state) {
+  mkdirSync(dirname(path), { recursive: true });
   state.updatedAt = new Date().toISOString();
-  writeFileSync(STATE_PATH, `${JSON.stringify(state, null, 2)}\n`);
+  writeFileSync(path, `${JSON.stringify(state, null, 2)}\n`);
 }
 
 function describeExecError(err) {
@@ -113,29 +113,55 @@ function setOutput(name, value) {
 }
 
 async function main() {
+  const config = loadBooks();
+  if (!config.books.length) {
+    throw new Error(`no books configured. Add one to books.json, for example:
+  { "books": [ { "id": 1, "bookId": "123456789012345", "title": "My Novel", "epub": "book/book.epub.enc" } ] }`);
+  }
+
+  // One book per run, lowest id first, skipping anything already marked done. A finished novel is
+  // never opened again, so the chain moves straight on to the next unfinished one.
+  const target = nextBook(config);
+  if (!target) {
+    log('every configured book is already marked done, nothing to upload');
+    log(`books:\n${summary(config)}`);
+    setOutput('published', 0);
+    setOutput('remaining', 0);
+    setOutput('finished', 'true');
+    return { remaining: 0, published: 0, stopped: null, next: 0 };
+  }
+
+  const EPUB_PATH = epubPathFor(target);
+  const STATE_PATH = statePathFor(target.bookId);
+  const BOOK_ID = target.bookId;
+
+  log(`book "${target.title ?? BOOK_ID}" (id ${target.id}, bookId ${BOOK_ID})`);
+  log(`books:\n${summary(config)}`);
+
   if (!existsSync(EPUB_PATH)) {
-    const found = existsSync(ASSETS_DIR) ? listFiles(ASSETS_DIR).slice(0, 12) : [];
+    const found = existsSync(WORK_DIR) ? listFiles(join(WORK_DIR, 'vault')).slice(0, 12) : [];
     throw new Error(
-      `EPUB not found at ${EPUB_PATH}.` +
-        (found.length ? ` Files actually unpacked: ${found.join(', ')}` : ` Nothing found under ${ASSETS_DIR}.`),
+      `EPUB not found for book "${target.title ?? BOOK_ID}": expected ${EPUB_PATH}` +
+        (found.length ? `. Files present in the vault: ${found.join(', ')}` : '. The vault is empty.'),
     );
   }
+
   const book = loadBook(EPUB_PATH);
   log(`book has ${book.total} chapters`);
   log(`range inputs: start=${START_INPUT || 'auto'} end=${END_INPUT || 'auto'} max=${MAX_CHAPTERS} delay=${DELAY_SECONDS}s`);
 
-  const state = loadState();
+  const state = loadState(STATE_PATH);
   const end = END_INPUT || book.total;
 
-  // Already finished a previous book and nobody asked for a specific range: stop before spending a
+  // Already finished this book and nobody asked for a specific range: stop before spending a
   // browser and a login on a run that has nothing to do. An explicit start_chapter always wins.
-  if (!START_INPUT && state.finishedAt && num(state.nextChapter) > end) {
-    log(`state says this book finished at ${state.finishedAt}, nothing to do`);
+  if (!START_INPUT && (state.finishedAt || state.done) && num(state.nextChapter) > end) {
+    log(`book "${target.title ?? BOOK_ID}" is already complete, nothing to do`);
     setOutput('published', 0);
     setOutput('remaining', 0);
     setOutput('next_chapter', state.nextChapter);
     setOutput('finished', 'true');
-    return;
+    return { remaining: 0, published: 0, stopped: null, next: state.nextChapter };
   }
 
   if (DRY_RUN) {
@@ -156,8 +182,8 @@ async function main() {
     return;
   }
 
-  const bookId = process.env.INKSTONE_BOOK_ID;
-  if (!bookId) throw new Error('INKSTONE_BOOK_ID is not set');
+  // The book id comes from books.json, which is public, so no secret is needed for it any more.
+  const bookId = BOOK_ID;
 
   // Three ways to be authenticated: a saved browser profile, a stored cookie session, or an
   // email+password account. Check all three before giving up, and say which one is missing.
@@ -248,7 +274,7 @@ async function main() {
         ].slice(-500);
         log(`chapter ${n} published (${published}/${MAX_CHAPTERS} this run)`);
 
-        saveState(state);
+        saveState(STATE_PATH, state);
         if (published % COMMIT_EVERY === 0) commitState(`chore: progress through EPUB chapter ${n}`);
 
         // Keep the browser flat so chapter 2000 is as quick as chapter 1.
@@ -261,7 +287,7 @@ async function main() {
       } catch (err) {
         failures += 1;
         warn(`chapter ${n} failed: ${err.message}`);
-        saveState(state);
+        saveState(STATE_PATH, state);
         commitState(`chore: record failure at EPUB chapter ${n}`);
         if (failures >= MAX_FAILURES) {
           stopped = `stopped after ${failures} consecutive failures`;
@@ -284,26 +310,31 @@ async function main() {
   const noProgress = published === 0 && num(state.nextChapter) < next;
   const remaining = noProgress ? 0 : Math.max(0, end - state.nextChapter + 1);
 
+  // Mark the book done so no later run ever opens it again. The chain then moves to the next one.
   state.finishedAt = remaining === 0 ? new Date().toISOString() : null;
-  saveState(state);
+  state.done = remaining === 0;
+  saveState(STATE_PATH, state);
   commitState(`chore: upload progress ${state.nextChapter - 1}/${book.total}`);
 
-  log(`published ${published} chapter(s) this run; next pending EPUB chapter is ${state.nextChapter}`);
+  const label = target.title ?? BOOK_ID;
+  log(`book "${label}": published ${published} chapter(s) this run; next pending EPUB chapter is ${state.nextChapter}`);
   if (noProgress) {
-    log(`nothing was publishable in the range ${next}..${end}; treating this as done so the chain stops`);
+    log(`nothing was publishable in the range ${next}..${end} for "${label}"; marking it done so the chain moves on`);
   } else if (remaining > 0) {
-    log(`${remaining} chapter(s) still to go`);
+    log(`${remaining} chapter(s) still to go on "${label}"`);
   } else {
-    log('all chapters in range are uploaded');
+    log(`"${label}" is fully uploaded, marked done; the next run will not touch it`);
   }
 
+  setOutput('book', label);
+  setOutput('book_id', BOOK_ID);
   setOutput('published', published);
   setOutput('remaining', remaining);
   setOutput('next_chapter', state.nextChapter);
   setOutput('finished', remaining === 0 ? 'true' : 'false');
   if (stopped) log(stopped);
 
-  return { remaining, published, stopped, next: state.nextChapter };
+  return { remaining, published, stopped, next: state.nextChapter, done: remaining === 0 };
 }
 
 // Local unattended mode: keep re-entering the loop until the range is done, instead of relying on
