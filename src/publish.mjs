@@ -112,6 +112,32 @@ function setOutput(name, value) {
   else log(`output ${name}=${value}`);
 }
 
+// A novel is not a fixed length, so "done" must not be permanent. If the EPUB is later replaced with
+// a longer one, the finished book reopens and the chain picks it up again. A book with no recorded
+// sourceChapters was finished before this existed, so it is left alone rather than re-uploaded.
+function reopenGrownBook(config) {
+  for (const book of config.books) {
+    const state = stateFor(book);
+    if (!state.done || !state.sourceChapters) continue;
+
+    const path = epubPathFor(book);
+    if (!existsSync(path)) continue;
+
+    const parsed = loadBook(path);
+    if (parsed.total > state.sourceChapters) {
+      state.done = false;
+      state.finishedAt = null;
+      saveState(statePathFor(book.bookId), state);
+      log(
+        `"${book.title ?? book.bookId}" has grown: the EPUB now holds ${parsed.total} chapters but it was ` +
+          `marked done at ${state.sourceChapters}. Reopening it.`,
+      );
+      return book;
+    }
+  }
+  return null;
+}
+
 async function main() {
   const config = loadBooks();
   if (!config.books.length) {
@@ -121,7 +147,10 @@ async function main() {
 
   // One book per run, lowest id first, skipping anything already marked done. A finished novel is
   // never opened again, so the chain moves straight on to the next unfinished one.
-  const target = nextBook(config);
+  let target = nextBook(config);
+  if (!target) {
+    target = reopenGrownBook(config);
+  }
   if (!target) {
     log('every configured book is already marked done, nothing to upload');
     log(`books:\n${summary(config)}`);
@@ -323,8 +352,11 @@ async function main() {
   const remaining = noProgress ? 0 : Math.max(0, end - state.nextChapter + 1);
 
   // Mark the book done so no later run ever opens it again. The chain then moves to the next one.
+  // sourceChapters records how long the EPUB was when that happened, so a longer EPUB later on can
+  // reopen it, because a novel's length is not fixed.
   state.finishedAt = remaining === 0 ? new Date().toISOString() : null;
   state.done = remaining === 0;
+  if (remaining === 0) state.sourceChapters = book.total;
   saveState(STATE_PATH, state);
   commitState(`chore: upload progress ${state.nextChapter - 1}/${book.total}`);
 
