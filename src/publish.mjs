@@ -260,7 +260,13 @@ async function main() {
       try {
         if (inkstone.sessionAlive === false) {
           throw new InkstoneError(
-            'the Inkstone session expired mid-run (keepalive failed). Re-grab cookies or run npm run signin, then rerun.',
+            'the Inkstone session expired mid-run (the keepalive stopped succeeding). Progress up to here ' +
+              'is saved, so nothing is lost.\n' +
+              '  Most likely cause: you signed in to Inkstone somewhere else while this was running, and ' +
+              'the account only allows one live session. Otherwise the session simply aged out.\n' +
+              '  Fix: export the cookies again from a signed-in browser and run\n' +
+              '    node src/import-cookies.mjs "C:\\path\\to\\cookies.json"\n' +
+              '  then git add vault && git commit -m "chore: refresh session" && git push, and re-run.',
           );
         }
         await inkstone.publishChapter(chapter);
