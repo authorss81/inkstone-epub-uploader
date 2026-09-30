@@ -47,7 +47,10 @@ jobs:
         run: |
           git fetch --depth 1 origin "+refs/heads/${{ env.VAULT_BRANCH }}:refs/remotes/origin/${{ env.VAULT_BRANCH }}" 2>/dev/null || true
           if git rev-parse --verify --quiet "origin/${{ env.VAULT_BRANCH }}" >/dev/null; then
-            git restore --source="origin/${{ env.VAULT_BRANCH }}" vault
+            while IFS= read -r path; do
+              [ -n "$path" ] || continue
+              git restore --source="origin/${{ env.VAULT_BRANCH }}" -- "$path"
+            done < <(git ls-tree -r --name-only "origin/${{ env.VAULT_BRANCH }}" -- vault)
           fi
 
       - name: Unpack vault
