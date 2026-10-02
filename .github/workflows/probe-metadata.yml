@@ -1,0 +1,85 @@
+name: Probe valid metadata values
+
+on:
+  workflow_dispatch:
+    inputs:
+      account:
+        description: 'Which stored session to use: main or second'
+        required: false
+        default: 'second'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: inkstone-publish
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Restore vault
+        env:
+          VAULT_BRANCH: vault-state
+        run: |
+          git fetch --depth 1 origin "+refs/heads/${{ env.VAULT_BRANCH }}:refs/remotes/origin/${{ env.VAULT_BRANCH }}" 2>/dev/null || true
+          if git rev-parse --verify --quiet "origin/${{ env.VAULT_BRANCH }}" >/dev/null; then
+            while IFS= read -r path; do
+              [ -n "$path" ] || continue
+              git restore --source="origin/${{ env.VAULT_BRANCH }}" -- "$path"
+            done < <(git ls-tree -r --name-only "origin/${{ env.VAULT_BRANCH }}" -- vault)
+          fi
+
+      - name: Unpack vault
+        env:
+          VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
+        run: |
+          node src/vault.mjs unpack
+          if [ -f work/session/storage-state.json ] && [ ! -f work/session/main.json ]; then
+            mv work/session/storage-state.json work/session/main.json
+          fi
+          if [ ! -f "work/session/${{ inputs.account }}.json" ]; then
+            echo "::error::no session stored for account '${{ inputs.account }}'"
+            exit 1
+          fi
+
+      - name: Dump the valid values
+        env:
+          VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
+          SESSION_PATH: ${{ github.workspace }}/work/session/${{ inputs.account }}.json
+          ACCOUNT_NAME: ${{ inputs.account }}
+        run: node src/probe-metadata.mjs | tee meta-output.txt
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Valid metadata values"
+            echo ""
+            echo '```'
+            cat meta-output.txt 2>/dev/null || echo "(no output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

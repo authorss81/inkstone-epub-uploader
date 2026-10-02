@@ -11,6 +11,48 @@
       "bookId": "37063137100600505",
       "title": "Sequence Of Rain",
       "epub": "book/book-37063137100600505.epub.enc"
+    },
+    {
+      "id": 3,
+      "bookId": "37081776300853605",
+      "title": "The Bellmaker of Kells",
+      "epub": "book/book-37081776300853605.epub.enc",
+      "account": "second"
+    },
+    {
+      "id": 4,
+      "bookId": "37081544500851705",
+      "title": "The Clockwork Cathedral",
+      "epub": "book/book-37081544500851705.epub.enc",
+      "account": "second"
+    },
+    {
+      "id": 5,
+      "bookId": "37081790008731505",
+      "title": "The Irrigation Ghost",
+      "epub": "book/book-37081790008731505.epub.enc",
+      "account": "second"
+    },
+    {
+      "id": 6,
+      "bookId": "37081819600854305",
+      "title": "The Mana Detective",
+      "epub": "book/book-37081819600854305.epub.enc",
+      "account": "second"
+    },
+    {
+      "id": 7,
+      "bookId": "37081400300847805",
+      "title": "The Museum of Forgotten Gods",
+      "epub": "book/book-37081400300847805.epub.enc",
+      "account": "second"
+    },
+    {
+      "id": 8,
+      "bookId": "37081416200848305",
+      "title": "The War of Borrowed Gods",
+      "epub": "book/book-37081416200848305.epub.enc",
+      "account": "second"
     }
   ]
 }

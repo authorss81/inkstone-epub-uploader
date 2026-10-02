@@ -1,0 +1,131 @@
+name: Create a novel
+
+on:
+  workflow_dispatch:
+    inputs:
+      account:
+        description: 'Which stored session to use: main or second'
+        required: false
+        default: 'second'
+      title:
+        description: 'Book name (max 70 characters). Leave blank to read it from --epub.'
+        required: false
+        default: ''
+      genre:
+        description: 'Genre name or id. Leave blank to read inkstone:genre from --epub.'
+        required: false
+        default: ''
+      gender:
+        description: 'Leading gender: male, female or common'
+        required: false
+        default: 'male'
+      synopsis:
+        description: 'Synopsis'
+        required: false
+        default: ''
+      length:
+        description: 'novels, short or super-short'
+        required: false
+        default: 'novels'
+      warning:
+        description: 'general audiences, parental guidance suggested, parents strongly cautioned, restricted, or no one 17 and under admitted'
+        required: false
+        default: 'general audiences'
+      abbreviation:
+        description: 'Abbreviation (max 15 characters)'
+        required: false
+        default: ''
+      tags:
+        description: 'Comma separated tags'
+        required: false
+        default: ''
+      create:
+        description: 'Actually create it. Leave unchecked to preview the payload only.'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: inkstone-publish
+  cancel-in-progress: false
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Restore vault
+        env:
+          VAULT_BRANCH: vault-state
+        run: |
+          git fetch --depth 1 origin "+refs/heads/${{ env.VAULT_BRANCH }}:refs/remotes/origin/${{ env.VAULT_BRANCH }}" 2>/dev/null || true
+          if git rev-parse --verify --quiet "origin/${{ env.VAULT_BRANCH }}" >/dev/null; then
+            while IFS= read -r path; do
+              [ -n "$path" ] || continue
+              git restore --source="origin/${{ env.VAULT_BRANCH }}" -- "$path"
+            done < <(git ls-tree -r --name-only "origin/${{ env.VAULT_BRANCH }}" -- vault)
+          fi
+
+      - name: Unpack vault
+        env:
+          VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
+        run: |
+          node src/vault.mjs unpack
+          if [ -f work/session/storage-state.json ] && [ ! -f work/session/main.json ]; then
+            mv work/session/storage-state.json work/session/main.json
+          fi
+          if [ ! -f "work/session/${{ inputs.account }}.json" ]; then
+            echo "::error::no session stored for account '${{ inputs.account }}'"
+            exit 1
+          fi
+
+      - name: Create or preview
+        env:
+          VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
+          SESSION_PATH: ${{ github.workspace }}/work/session/${{ inputs.account }}.json
+          ACCOUNT_NAME: ${{ inputs.account }}
+        run: |
+          set -o pipefail
+          args=(--title "${{ inputs.title }}" --gender "${{ inputs.gender }}" \
+                --length "${{ inputs.length }}" --warning "${{ inputs.warning }}")
+          [ -n "${{ inputs.genre }}" ] && args+=(--genre "${{ inputs.genre }}")
+          [ -n "${{ inputs.synopsis }}" ] && args+=(--synopsis "${{ inputs.synopsis }}")
+          [ -n "${{ inputs.abbreviation }}" ] && args+=(--abbreviation "${{ inputs.abbreviation }}")
+          [ -n "${{ inputs.tags }}" ] && args+=(--tags "${{ inputs.tags }}")
+          [ "${{ inputs.create }}" = "true" ] && args+=(--create)
+          node src/create-novel.mjs "${args[@]}" | tee create-output.txt
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Create novel: ${{ inputs.title }}"
+            echo ""
+            echo '```'
+            cat create-output.txt 2>/dev/null || echo "(no output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
