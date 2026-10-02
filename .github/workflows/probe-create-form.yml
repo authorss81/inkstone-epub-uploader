@@ -56,12 +56,25 @@ jobs:
       - name: Unpack vault
         env:
           VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
-        run: node src/vault.mjs unpack
+        run: |
+          node src/vault.mjs unpack
+          # Older vaults only have the pre-per-account filename; give the default account its
+          # expected name so a probe does not fail with a confusing "not signed in".
+          if [ -f work/session/storage-state.json ] && [ ! -f work/session/main.json ]; then
+            mv work/session/storage-state.json work/session/main.json
+            echo "migrated the legacy session filename to main.json"
+          fi
+          if [ ! -f "work/session/${{ inputs.account }}.json" ]; then
+            echo "::error::no session stored for account '${{ inputs.account }}'. Import it first:"
+            echo "  node src/import-cookies.mjs <cookies.json> --account ${{ inputs.account }}"
+            exit 1
+          fi
 
       - name: Probe the form
         env:
           VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
           SESSION_PATH: ${{ github.workspace }}/work/session/${{ inputs.account }}.json
+          ACCOUNT_NAME: ${{ inputs.account }}
           ARTIFACT_DIR: ${{ github.workspace }}/artifacts
         run: node src/probe-create-form.mjs | tee probe-output.txt
 

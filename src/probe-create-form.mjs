@@ -15,7 +15,13 @@ const inkstone = new Inkstone({
 await inkstone.launch();
 try {
   if (!(await inkstone.isAuthenticated())) {
-    console.error('[probe] not signed in');
+    const which = process.env.ACCOUNT_NAME || 'this';
+    console.error(`[probe] the stored session for "${which}" is no longer valid.`);
+    console.error('[probe] Inkstone sessions age out, and a session captured a day or two ago is normally');
+    console.error('[probe] dead. Sign in to that account in a normal browser, export the cookies, and:');
+    console.error(`[probe]   node src/import-cookies.mjs "C:\\path\\to\\cookies.json" --account ${which}`);
+    console.error('[probe] then git add vault && git commit -m "chore: refresh session" && git push');
+    await inkstone.close();
     process.exit(1);
   }
 
