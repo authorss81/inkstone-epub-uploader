@@ -15,6 +15,14 @@ if ! git rev-parse --git-dir >/dev/null 2>&1; then
   exit 1
 fi
 
+# git refuses to commit with no identity, and git commit-tree needs a committer too. Set a local
+# one for this repository only if the machine has none, so this works on a fresh clone.
+if [ -z "$(git config user.email 2>/dev/null)" ] || [ -z "$(git config user.name 2>/dev/null)" ]; then
+  git config user.email "inkstone-uploader@users.noreply.github.com"
+  git config user.name "inkstone-uploader"
+  echo "set a repository-local git identity (author inkstone-uploader <inkstone-uploader@users.noreply.github.com>)"
+fi
+
 if ! git rev-parse --verify --quiet "refs/remotes/origin/$branch" >/dev/null &&
    ! git fetch -q --depth=1 origin "+refs/heads/$branch:refs/remotes/origin/$branch" 2>/dev/null; then
   echo "could not reach origin/$branch yet, continuing" >&2

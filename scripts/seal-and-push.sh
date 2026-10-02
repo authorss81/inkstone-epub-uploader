@@ -14,6 +14,12 @@ set -euo pipefail
 message="${1:-chore: upload progress}"
 branch="${VAULT_BRANCH:-vault-state}"
 
+# Belt and braces: the workflow configures git, but commit-tree still needs a committer identity.
+if [ -z "$(git config user.email 2>/dev/null)" ] || [ -z "$(git config user.name 2>/dev/null)" ]; then
+  git config user.email "inkstone-uploader@users.noreply.github.com"
+  git config user.name "inkstone-uploader"
+fi
+
 node src/vault.mjs pack
 
 git add vault
