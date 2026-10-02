@@ -168,28 +168,36 @@ try {
   // Tags are a closed list, so resolve them against the catalogue the site actually serves rather
   // than searching and hoping. An unknown name is refused, because a made-up tag silently does
   // nothing for discoverability and the form caps a novel at 10 tags.
+  //
+  // getPopularTags answers one tag category at a time and tagCatId=0 only returns the 20 most popular
+  // overall, so the catalogue has to be assembled from every category or most real tags look missing.
   let tagIds = [];
   if (tags.length) {
-    const popular = await inkstone.apiGet('/ccauthorweb/novel/getPopularTags', {
-      gender,
-      language,
-      freeType: FREE_TYPE.novel,
-      tagCatId: 0,
-    });
-    const catalogue = Array.isArray(popular.body?.result) ? popular.body.result : [];
+    const CATALOGUES = [0, 100001, 100002, 100003, 100004, 100005];
+    const catalogue = [];
+    for (const catId of CATALOGUES) {
+      const res = await inkstone.apiGet('/ccauthorweb/novel/getPopularTags', {
+        gender,
+        language,
+        freeType: FREE_TYPE.novel,
+        tagCatId: catId,
+      });
+      if (Array.isArray(res.body?.result)) catalogue.push(...res.body.result);
+    }
     if (!catalogue.length) {
       console.error('[create] could not load the tag catalogue, refusing to guess tag ids');
       process.exit(1);
     }
-    const byName = new Map(catalogue.map((t) => [String(t.tagName).toLowerCase(), t.tagId]));
+    const byName = new Map();
+    for (const t of catalogue) byName.set(String(t.tagName).toLowerCase(), t.tagId);
     for (const tag of tags) {
       const id = byName.get(tag.toLowerCase());
       if (id) {
         tagIds.push(id);
         console.log(`[create] tag "${tag}" -> ${id}`);
       } else {
-        console.error(`[create] "${tag}" is not a tag Inkstone offers. Refusing rather than dropping it.`);
-        console.error(`[create] available: ${catalogue.map((t) => t.tagName).join(', ')}`);
+        console.error(`[create] "${tag}" is not a tag Inkstone offers for this novel, refusing rather than dropping it.`);
+        console.error(`[create] available: ${[...byName.keys()].join(', ')}`);
         process.exit(1);
       }
     }
