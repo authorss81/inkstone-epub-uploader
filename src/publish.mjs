@@ -375,7 +375,16 @@ async function main() {
   setOutput('published', published);
   setOutput('remaining', remaining);
   setOutput('next_chapter', state.nextChapter);
-  setOutput('finished', remaining === 0 ? 'true' : 'false');
+
+  // "finished" has to mean the whole queue is done, not just this book. Reporting it per book made
+  // the workflow stop handing off the moment one novel completed, leaving the rest of the queue
+  // untouched even though nextBook() would happily have picked the next one.
+  const queueDone = !nextBook(config) && !reopenGrownBook(config);
+  setOutput('finished', queueDone ? 'true' : 'false');
+  if (!queueDone) {
+    const upcoming = nextBook(config);
+    log(`queue continues; the next run will start on "${upcoming?.title ?? upcoming?.bookId}"`);
+  }
   if (stopped) log(stopped);
 
   return { remaining, published, stopped, next: state.nextChapter, done: remaining === 0 };
