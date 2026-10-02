@@ -23,7 +23,8 @@
     "test": "node src/lib/books.test.mjs",
     "vault:unpack": "node src/vault.mjs unpack",
     "vault:pack": "node src/vault.mjs pack",
-    "vault:seal": "node src/vault.mjs seal"
+    "vault:seal": "node src/vault.mjs seal",
+    "create:novel": "node src/create-novel.mjs"
   },
   "dependencies": {
     "fflate": "^0.8.2",
