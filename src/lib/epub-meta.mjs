@@ -81,15 +81,21 @@ export function readEpubMetadata(epubPath) {
   //   <h1> title </h1> <p>author</p> <p>N chapters</p> <p>genre line</p> <hr/> <p>blurb</p>
   const titlePage = findPage(entries, 'title');
   if (titlePage) {
-    const parts = pageParagraphs(titlePage);
+    // pageParagraphs also picks up the <h1>, so drop it before reading the lines underneath it.
     const heading = titlePage.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1]?.replace(/<[^>]+>/g, '').trim();
+    const parts = pageParagraphs(titlePage).filter((p) => p !== heading);
     if (heading && !meta.title) meta.title = heading;
-    if (parts[0] && !meta.creator) meta.creator = parts[0];
-    const chapters = parts.find((p) => /^\d+\s+chapters?$/i.test(p));
+
+    const [authorLine, ...rest] = parts;
+    if (authorLine && !meta.creator) meta.creator = authorLine;
+
+    const chapters = rest.find((p) => /^\d+\s+chapters?$/i.test(p));
     if (chapters) meta.chapterCount = Number(chapters.match(/\d+/)[0]);
-    const genreLine = parts.find((p) => /[a-z]/i.test(p) && p.includes('/') && p.length < 80);
+
+    const genreLine = rest.find((p) => /[a-z]/i.test(p) && p.includes('/') && p.length < 80);
     if (genreLine) meta.genreLine = genreLine;
-    const blurb = parts.filter((p) => p !== parts[0] && p !== chapters && p !== genreLine);
+
+    const blurb = rest.filter((p) => p !== chapters && p !== genreLine);
     if (blurb.length) meta.blurb = blurb.join(' ');
   }
 
