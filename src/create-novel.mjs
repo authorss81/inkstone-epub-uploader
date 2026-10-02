@@ -165,23 +165,37 @@ try {
     process.exit(1);
   }
 
+  // Tags are a closed list, so resolve them against the catalogue the site actually serves rather
+  // than searching and hoping. An unknown name is refused, because a made-up tag silently does
+  // nothing for discoverability and the form caps a novel at 10 tags.
   let tagIds = [];
   if (tags.length) {
+    const popular = await inkstone.apiGet('/ccauthorweb/novel/getPopularTags', {
+      gender,
+      language,
+      freeType: FREE_TYPE.novel,
+      tagCatId: 0,
+    });
+    const catalogue = Array.isArray(popular.body?.result) ? popular.body.result : [];
+    if (!catalogue.length) {
+      console.error('[create] could not load the tag catalogue, refusing to guess tag ids');
+      process.exit(1);
+    }
+    const byName = new Map(catalogue.map((t) => [String(t.tagName).toLowerCase(), t.tagId]));
     for (const tag of tags) {
-      const res = await inkstone.apiGet('/ccauthorweb/novel/tagSuggestion', {
-        gender,
-        language,
-        freeType: FREE_TYPE.novel,
-        keyword: tag,
-      });
-      const hits = res.body?.result;
-      const first = Array.isArray(hits) ? hits[0] : null;
-      if (first?.tagId) {
-        tagIds.push(first.tagId);
-        console.log(`[create] tag "${tag}" -> ${first.tagId} (${first.tagName})`);
+      const id = byName.get(tag.toLowerCase());
+      if (id) {
+        tagIds.push(id);
+        console.log(`[create] tag "${tag}" -> ${id}`);
       } else {
-        console.log(`[create] tag "${tag}" -> no match, skipping`);
+        console.error(`[create] "${tag}" is not a tag Inkstone offers. Refusing rather than dropping it.`);
+        console.error(`[create] available: ${catalogue.map((t) => t.tagName).join(', ')}`);
+        process.exit(1);
       }
+    }
+    if (tagIds.length > 10) {
+      console.error(`[create] ${tagIds.length} tags, the form allows at most 10`);
+      process.exit(1);
     }
   }
 
