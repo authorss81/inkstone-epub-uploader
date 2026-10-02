@@ -1,11 +1,14 @@
 import { Inkstone } from './lib/inkstone.mjs';
+import { readEpubMetadata } from './lib/epub-meta.mjs';
 
 // Creates a novel on Inkstone, then prints the CBID so it can be queued for uploading.
 //
-//   node src/create-novel.mjs --title "The Bellmaker of Kells" --genre Fantasy \
-//     --synopsis "..." --length novels --account second
+//   node src/create-novel.mjs --epub "C:\books\a.epub" --create
 //
-// Previews by default and prints the exact payload. Pass --create to actually create it.
+// Everything comes from the EPUB's own metadata when it is there, and command line flags win over it.
+// See src/lib/epub-meta.mjs for the field names an EPUB has to carry.
+//
+// Previews by default. Pass --create to actually create it.
 //
 // Every enum value here was read out of the live create form, not guessed:
 //   freeType       5 = novel, 8 = fanfic        (constants-CyPiuB-B / utils-BB24B4f5)
@@ -33,23 +36,50 @@ const AGE_GROUP = {
   'no one 17 and under admitted': 5,
 };
 
-const title = flag('--title');
-const genre = flag('--genre');
+const epubPath = flag('--epub');
+const fromEpub = epubPath ? readEpubMetadata(epubPath) : null;
+if (epubPath && !fromEpub) {
+  console.error(`[create] could not read metadata out of ${epubPath}`);
+  process.exit(1);
+}
+const pick = (flagValue, epubValue) => flagValue || epubValue || '';
+
+const title = pick(flag('--title'), fromEpub?.title);
+const genre = pick(flag('--genre'), fromEpub?.genre);
 const account = flag('--account') || 'main';
-const synopsis = flag('--synopsis') || '';
-const abbreviation = flag('--abbreviation') || '';
-const tags = (flag('--tags') || '').split(',').map((t) => t.trim()).filter(Boolean);
-const genderName = (flag('--gender') || 'male').toLowerCase();
-const lengthName = (flag('--length') || 'novels').toLowerCase();
-const ageName = (flag('--warning') || 'general audiences').toLowerCase();
+const synopsis = pick(flag('--synopsis'), fromEpub?.synopsis);
+const abbreviation = pick(flag('--abbreviation'), fromEpub?.abbreviation);
+const tags = pick(flag('--tags'), (fromEpub?.subjects || []).join(','))
+  .split(',')
+  .map((t) => t.trim())
+  .filter(Boolean);
+const genderName = pick(flag('--gender'), fromEpub?.gender || 'male').toLowerCase();
+const lengthName = pick(flag('--length'), fromEpub?.length || 'novels').toLowerCase();
+const ageName = pick(flag('--warning'), fromEpub?.warning || 'general audiences').toLowerCase();
 const language = Number(flag('--language') || 1);
 const shouldCreate = has('--create');
 
+if (fromEpub) {
+  console.log(`[create] metadata read from ${epubPath}`);
+  for (const k of ['title', 'synopsis', 'genre', 'gender', 'length', 'warning', 'abbreviation']) {
+    const v = k === 'title' || k === 'synopsis' ? fromEpub[k] : fromEpub[k];
+    console.log(`[create]   ${k.padEnd(13)} ${v ? JSON.stringify(String(v).slice(0, 90)) : '(missing)'}`);
+  }
+  console.log(`[create]   subjects      ${fromEpub.subjects.length ? JSON.stringify(fromEpub.subjects) : '(missing)'}`);
+  console.log('');
+}
+
 if (!title) {
-  console.error('usage: node src/create-novel.mjs --title "Name" --genre Fantasy [--create]');
+  console.error('usage: node src/create-novel.mjs --epub "book.epub" [--create]');
+  console.error('   or: node src/create-novel.mjs --title "Name" --genre Fantasy [--create]');
   console.error('  --gender male|female|common   --length novels|short|super-short');
   console.error('  --warning "general audiences"  --synopsis "..."  --tags "a,b,c"');
   console.error('  --abbreviation ABC  --account name');
+  process.exit(1);
+}
+if (!synopsis) {
+  console.error('[create] no synopsis. Put <dc:description> in the EPUB, or pass --synopsis.');
+  console.error('[create] Inkstone shows the synopsis to readers before anything else, so this one matters.');
   process.exit(1);
 }
 if (!(genderName in GENDER)) {
