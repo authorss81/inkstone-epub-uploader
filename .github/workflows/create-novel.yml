@@ -8,10 +8,11 @@ on:
         required: false
         default: 'second'
       title:
-        description: 'Book name (max 70 characters)'
-        required: true
+        description: 'Book name (max 70 characters). Leave blank to read it from --epub.'
+        required: false
+        default: ''
       genre:
-        description: 'Genre name or id, from the list the preview prints'
+        description: 'Genre name or id. Leave blank to read inkstone:genre from --epub.'
         required: false
         default: ''
       gender:

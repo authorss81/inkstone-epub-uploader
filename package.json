@@ -24,7 +24,8 @@
     "vault:unpack": "node src/vault.mjs unpack",
     "vault:pack": "node src/vault.mjs pack",
     "vault:seal": "node src/vault.mjs seal",
-    "create:novel": "node src/create-novel.mjs"
+    "create:novel": "node src/create-novel.mjs",
+    "meta:show": "node src/set-epub-metadata.mjs"
   },
   "dependencies": {
     "fflate": "^0.8.2",
