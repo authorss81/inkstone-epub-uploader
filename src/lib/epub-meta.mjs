@@ -32,6 +32,31 @@ function locateOpf(entries) {
 const esc = (s) =>
   String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+// Turn a page's XHTML into plain paragraphs. These books keep their title page and their synopsis on
+// their own pages rather than in the OPF, so the reader has to look at both.
+function pageParagraphs(html) {
+  const body = html.replace(/<head[\s\S]*?<\/head>/i, '');
+  return [...body.matchAll(/<(?:p|h1|h2|div)[^>]*>([\s\S]*?)<\/(?:p|h1|h2|div)>/gi)]
+    .map((m) =>
+      m[1]
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/\s+/g, ' ')
+        .trim(),
+    )
+    .filter(Boolean);
+}
+
+function findPage(entries, name) {
+  const key = Object.keys(entries).find((k) => k.toLowerCase().endsWith(`/${name}.xhtml`));
+  return key ? strFromU8(entries[key]) : null;
+}
+
 // Everything the create step can learn from the file alone.
 export function readEpubMetadata(epubPath) {
   const entries = unzipSync(new Uint8Array(readFileSync(epubPath)));
@@ -51,6 +76,31 @@ export function readEpubMetadata(epubPath) {
   for (const p of INKSTONE_PROPS) {
     meta[p] = one(new RegExp(`<meta[^>]*property=["']inkstone:${p}["'][^>]*>([\\s\\S]*?)</meta>`, 'i'));
   }
+
+  // These books put the synopsis on their own page and describe themselves on a title page:
+  //   <h1> title </h1> <p>author</p> <p>N chapters</p> <p>genre line</p> <hr/> <p>blurb</p>
+  const titlePage = findPage(entries, 'title');
+  if (titlePage) {
+    const parts = pageParagraphs(titlePage);
+    const heading = titlePage.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1]?.replace(/<[^>]+>/g, '').trim();
+    if (heading && !meta.title) meta.title = heading;
+    if (parts[0] && !meta.creator) meta.creator = parts[0];
+    const chapters = parts.find((p) => /^\d+\s+chapters?$/i.test(p));
+    if (chapters) meta.chapterCount = Number(chapters.match(/\d+/)[0]);
+    const genreLine = parts.find((p) => /[a-z]/i.test(p) && p.includes('/') && p.length < 80);
+    if (genreLine) meta.genreLine = genreLine;
+    const blurb = parts.filter((p) => p !== parts[0] && p !== chapters && p !== genreLine);
+    if (blurb.length) meta.blurb = blurb.join(' ');
+  }
+
+  const synopsisPage = findPage(entries, 'synopsis');
+  if (synopsisPage) {
+    const paras = pageParagraphs(synopsisPage).filter((p) => !/^synopsis$/i.test(p));
+    if (paras.length) meta.synopsisPage = paras.join('\n\n');
+    // The OPF description wins if it exists, otherwise fall back to the synopsis page.
+    if (!meta.synopsis) meta.synopsis = meta.synopsisPage;
+  }
+
   return meta;
 }
 
