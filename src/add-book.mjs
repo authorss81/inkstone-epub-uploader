@@ -4,9 +4,11 @@ import { encrypt } from './vault.mjs';
 
 // Adds a novel to books.json and seals its EPUB into the vault in one step.
 //
-//   node src/add-book.mjs --id 2 --book-id 98765432109876 --title "My Second Novel" --epub C:\books\two.epub
+//   node src/add-book.mjs --book-id 98765432109876 --epub C:\books\two.epub
+//   node src/add-book.mjs --book-id 1122 --epub C:\books\three.epub --account second
 //
 // Book ids are public (they are in the URL of a published book), so nothing secret is involved.
+// --account is only needed for novels on a second Inkstone account, which has its own session.
 
 const args = process.argv.slice(2);
 function arg(flag) {
@@ -20,7 +22,10 @@ const epub = arg('--epub');
 const explicitId = arg('--id');
 
 if (!bookId || !epub) {
-  console.error('usage: node src/add-book.mjs --book-id <id> --epub <path> [--title "Name"] [--id N]');
+  console.error(
+    'usage: node src/add-book.mjs --book-id <id> --epub <path> [--title "Name"] [--id N] [--account name]',
+  );
+  console.error('  set VAULT_PASSPHRASE first so the EPUB can be sealed');
   process.exit(1);
 }
 if (!existsSync(epub)) {
@@ -31,6 +36,8 @@ if (!process.env.VAULT_PASSPHRASE) {
   console.error('VAULT_PASSPHRASE must be set so the EPUB can be sealed');
   process.exit(1);
 }
+
+const account = arg('--account') || 'main';
 
 const CONFIG = resolve(process.env.BOOKS_CONFIG ?? 'books.json');
 const VAULT = resolve(process.env.VAULT_DIR ?? 'vault');
@@ -64,13 +71,21 @@ const out = join(VAULT, SLOT);
 mkdirSync(dirname(out), { recursive: true });
 encrypt(readFileSync(epub), out);
 
-config.books.push({ id: nextId, bookId, title: title ?? `Book ${nextId}`, epub: SLOT });
+const entry = { id: nextId, bookId, title: title ?? `Book ${nextId}`, epub: SLOT };
+if (account && account !== 'main') entry.account = account;
+
+config.books.push(entry);
 writeFileSync(CONFIG, `${JSON.stringify(config, null, 2)}\n`);
 
 console.log(`sealed ${epub} -> ${out}`);
-console.log(`added book ${nextId} "${config.books.at(-1).title}" to ${CONFIG}`);
+console.log(`added book ${nextId} "${entry.title}" to ${CONFIG}${entry.account ? ` (account "${entry.account}")` : ''}`);
 console.log('');
 console.log('books.json now reads:');
 console.log(readFileSync(CONFIG, 'utf8'));
+if (entry.account) {
+  console.log(`this book is on the "${entry.account}" Inkstone account, so import that account's cookies too:`);
+  console.log(`  node src/import-cookies.mjs "C:\\path\\to\\cookies.json" --account ${entry.account}`);
+  console.log('');
+}
 console.log('commit both files:');
-console.log('  git add books.json vault && git commit -m "feat: add ' + (config.books.at(-1).title) + '" && git push');
+console.log(`  git add books.json vault && git commit -m "feat: add ${entry.title}" && git push`);

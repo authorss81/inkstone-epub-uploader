@@ -17,6 +17,8 @@
     "probe": "node src/probe-login.mjs",
     "cleanup:drafts": "node src/cleanup-drafts.mjs",
     "add:book": "node src/add-book.mjs",
+    "add:batch": "node src/add-batch.mjs",
+    "push:vault": "node src/push-vault.mjs",
     "check:workflows": "python check-workflows.py",
     "test": "node src/lib/books.test.mjs",
     "vault:unpack": "node src/vault.mjs unpack",
