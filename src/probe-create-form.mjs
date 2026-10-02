@@ -37,7 +37,11 @@ try {
     }
   }
 
-  const cats = await inkstone.apiGet('/tauthorweb/novel/categories', { freetype: 'novel', language: 'en' });
+  const cats = await inkstone.apiGet('/tauthorweb/novel/categories', {
+    freetype: 'novel',
+    sexattr: 'male',
+    language: 'en',
+  });
   const catList = cats.body?.result;
   console.log(`[probe] novel/categories -> returnCode ${cats.body?.returnCode}, ${Array.isArray(catList) ? catList.length : '?'} categories`);
   if (Array.isArray(catList)) {
@@ -80,6 +84,64 @@ try {
   }
 
   await inkstone.snapshot('create-novel-form');
+
+  // The dropdown values are not in the DOM until they are opened, and the genre list depends on the
+  // leading gender the form insists on first. Drive the form (never the create button) to read the
+  // real values rather than guessing them from the bundled constants.
+  console.log('\n[probe] driving the form to read the real option values...');
+
+  async function optionsOf(triggerId) {
+    // antd hides the real <input> under a .ant-select-selector, so clicking #id itself times out.
+    const selector = `xpath=//*[@id="${triggerId}"]/ancestor::div[contains(@class,"ant-select-selector")][1]`;
+    await inkstone.page.locator(selector).click({ timeout: 15000 });
+    await inkstone.page.waitForTimeout(1500);
+    const opts = await inkstone.page.evaluate(() =>
+      [...document.querySelectorAll('.ant-select-dropdown:not(.ant-slide-up-leave) .ant-select-item')]
+        .map((li) => ({
+          value: li.getAttribute('title') !== null ? li.getAttribute('title') : (li.dataset?.value ?? ''),
+          label: (li.textContent || '').replace(/\s+/g, ' ').trim(),
+          attrs: [...li.attributes].reduce((a, x) => ({ ...a, [x.name]: x.value }), {}),
+        })),
+    );
+    await inkstone.page.keyboard.press('Escape');
+    await inkstone.page.waitForTimeout(400);
+    return opts;
+  }
+
+  // Leading gender first: the form blocks genre and tags until it is set.
+  const genderClicked = await inkstone.page.evaluate(() => {
+    const labels = [...document.querySelectorAll('label')];
+    const male = labels.find((l) => (l.textContent || '').replace(/\s+/g, ' ').trim().toUpperCase().includes('MALE ORIENTED'));
+    const input = male?.querySelector('input');
+    if (!input) return null;
+    input.click();
+    return input.value;
+  });
+  console.log(`[probe] leading gender set to: ${genderClicked === null ? '(could not find the radio)' : genderClicked}`);
+  await inkstone.page.waitForTimeout(2500);
+
+  for (const [name, id] of [
+    ['GENRE', 'categoryId'],
+    ['LENGTH', 'expectedLength'],
+    ['WARNING NOTICE', 'ageGroup'],
+    ['TAG CATEGORY', 'rc_select_5'],
+    ['WRITING CONTEST', 'contestId'],
+  ]) {
+    try {
+      const opts = await optionsOf(id);
+      console.log(`[probe] ${name} (${id}) offers ${opts.length}:`);
+      for (const o of opts.slice(0, 24)) {
+        const a = o.attrs || {};
+        const v = a['data-value'] ?? o.value ?? '';
+        console.log(`[probe]   value="${v}" label="${o.label}"`);
+      }
+      if (!opts.length) console.log(`[probe]   (dropdown empty or still loading)`);
+    } catch (err) {
+      console.log(`[probe] ${name} (${id}) could not be opened: ${err.message.split('\n')[0]}`);
+    }
+  }
+
+  await inkstone.snapshot('create-novel-form-filled');
 } finally {
   await inkstone.close();
 }
