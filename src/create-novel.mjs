@@ -110,13 +110,18 @@ try {
     process.exit(1);
   }
 
-  // The API returns catename/catid; the form renames them categoryName/categoryId.
+  // The API returns cateid/catename; the form renames them to categoryId/categoryName.
   const genres = list.map((c) => ({
-    id: c.categoryId ?? c.id ?? c.catid,
-    name: c.categoryName ?? c.name ?? c.catename,
+    id: c.cateid ?? c.categoryId ?? c.id,
+    name: c.catename ?? c.categoryName ?? c.name,
   }));
   console.log(`[create] ${genres.length} genres available for gender="${genderName}"`);
   for (const g of genres) console.log(`[create]   ${String(g.id).padEnd(8)} ${g.name}`);
+
+  if (genres.some((g) => g.id === undefined || g.id === null)) {
+    console.error('[create] the genre list had no ids, refusing to guess');
+    process.exit(1);
+  }
 
   if (!genre) {
     console.error('[create] --genre is required, pick one of the ids above');
