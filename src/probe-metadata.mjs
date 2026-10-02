@@ -73,30 +73,36 @@ try {
   });
   const tagCats = dump(cats.body) ?? [];
   console.log(`[meta] getAllTagCats -> ${cats.body?.returnCode}, ${tagCats.length} categories`);
+  console.log(`[meta] raw first entry: ${JSON.stringify(tagCats[0] ?? null)}`);
   for (const c of tagCats) {
-    console.log(`[meta]   id=${String(c.tagCatId ?? c.id ?? c.catid).padEnd(6)} ${c.tagCatName ?? c.catename ?? c.name}`);
+    console.log(`[meta]   ${JSON.stringify(c)}`);
   }
 
-  // The tags themselves. getPopularTags answers per tag category, 0 meaning all of them.
+  // The tags themselves. getPopularTags wants a NUMERIC gender, not a word: passing "male" comes
+  // back as returnCode 4002, which is the API saying it could not convert the parameter.
   console.log('\n[meta] === TAGS (popular, per category) ===');
   const total = new Set();
-  const wanted = [{ id: 0, name: 'all' }, ...tagCats.map((c) => ({ id: c.tagCatId ?? c.id ?? c.catid, name: c.tagCatName ?? c.catename ?? c.name }))];
-  for (const gender of ['male', 'female']) {
+  const catOf = (c) => c.tagCatId ?? c.id ?? c.catid ?? c.catId;
+  const wanted = [
+    { id: 0, name: 'all' },
+    ...tagCats.map((c) => ({ id: catOf(c), name: c.tagCatName ?? c.catename ?? c.name ?? catOf(c) })),
+  ];
+  for (const [gname, gvalue] of GENDERS) {
     for (const cat of wanted) {
       const res = await inkstone.apiGet('/ccauthorweb/novel/getPopularTags', {
-        gender,
+        gender: gvalue,
         language: 1,
         freeType: FREE_TYPE_NOVEL,
         tagCatId: cat.id,
       });
       const list = dump(res.body);
       if (!Array.isArray(list)) {
-        console.log(`[meta] gender=${gender} cat=${cat.name} -> ${res.body?.returnCode} (${res.body?.returnMsg ?? ''})`);
+        console.log(`[meta] gender=${gname} cat=${cat.name} -> ${res.body?.returnCode} (${res.body?.returnMsg ?? ''})`);
         continue;
       }
-      console.log(`[meta] gender=${gender} cat=${cat.name} -> ${list.length} tags`);
+      console.log(`[meta] gender=${gname} cat=${cat.name} -> ${list.length} tags`);
       for (const t of list) {
-        total.add(`${gender}:${t.tagId}:${t.tagName}`);
+        total.add(`${gname}:${t.tagId}:${t.tagName}`);
         console.log(`[meta]   ${String(t.tagId).padEnd(8)} ${t.tagName}`);
       }
     }
