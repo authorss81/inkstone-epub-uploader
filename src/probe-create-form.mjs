@@ -91,8 +91,10 @@ try {
   console.log('\n[probe] driving the form to read the real option values...');
 
   async function optionsOf(triggerId) {
-    await inkstone.page.click(`#${triggerId}`, { timeout: 15000 });
-    await inkstone.page.waitForTimeout(1200);
+    // antd hides the real <input> under a .ant-select-selector, so clicking #id itself times out.
+    const selector = `xpath=//*[@id="${triggerId}"]/ancestor::div[contains(@class,"ant-select-selector")][1]`;
+    await inkstone.page.locator(selector).click({ timeout: 15000 });
+    await inkstone.page.waitForTimeout(1500);
     const opts = await inkstone.page.evaluate(() =>
       [...document.querySelectorAll('.ant-select-dropdown:not(.ant-slide-up-leave) .ant-select-item')]
         .map((li) => ({
