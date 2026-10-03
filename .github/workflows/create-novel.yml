@@ -49,7 +49,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: inkstone-publish
+  group: inkstone-create-novel
   cancel-in-progress: false
 
 jobs:
