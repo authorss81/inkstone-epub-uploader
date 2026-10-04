@@ -20,7 +20,7 @@ env:
   VAULT_BRANCH: vault-state
 
 concurrency:
-  group: inkstone-publish
+  group: inkstone-cleanup-drafts
   cancel-in-progress: false
 
 jobs:
