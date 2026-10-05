@@ -61,10 +61,9 @@ jobs:
         env:
           VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
         run: |
-          if [ -f work/session/storage-state.json ] && [ ! -f work/session/main.json ]; then
-            mv work/session/storage-state.json work/session/main.json
-          fi
           node src/vault.mjs unpack
+          # Older vaults only have the pre-per-account filename; give the default account its
+          # expected name so a status check does not fail with a confusing "not signed in".
           if [ -f work/session/storage-state.json ] && [ ! -f work/session/main.json ]; then
             mv work/session/storage-state.json work/session/main.json
           fi
