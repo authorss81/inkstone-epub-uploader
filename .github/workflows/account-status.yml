@@ -3,6 +3,10 @@ name: Account status
 on:
   workflow_dispatch:
     inputs:
+      account:
+        description: 'Which stored session to use: main or second'
+        required: false
+        default: 'main'
       book_id:
         description: 'Also report on this specific book id (optional)'
         required: false
@@ -57,15 +61,17 @@ jobs:
         env:
           VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
         run: |
+          node src/vault.mjs unpack
+          # Older vaults only have the pre-per-account filename; give the default account its
+          # expected name so a status check does not fail with a confusing "not signed in".
           if [ -f work/session/storage-state.json ] && [ ! -f work/session/main.json ]; then
             mv work/session/storage-state.json work/session/main.json
           fi
-          node src/vault.mjs unpack
 
       - name: Report
         env:
           VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
-          SESSION_PATH: ${{ github.workspace }}/work/session/main.json
+          SESSION_PATH: ${{ github.workspace }}/work/session/${{ inputs.account }}.json
           ARTIFACT_DIR: ${{ github.workspace }}/artifacts
           CHECK_BOOK_ID: ${{ inputs.book_id }}
         run: node src/account-status.mjs | tee status-output.txt
