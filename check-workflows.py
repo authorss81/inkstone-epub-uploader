@@ -72,7 +72,7 @@ for path in sorted(Path('.github/workflows').glob('*.yml')):
                 continue
             noise = [l for l in result.stderr.splitlines() if 'wsl' not in l and 'translate' not in l]
             print(f'FAIL {path}  hand-off command is not valid bash: {noise}')
-                failures += 1
+            failures += 1
 
 print()
 print('all workflow checks passed' if not failures else f'{failures} problem(s) found')
