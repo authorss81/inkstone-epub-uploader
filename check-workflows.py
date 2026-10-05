@@ -62,13 +62,12 @@ for path in sorted(Path('.github/workflows').glob('*.yml')):
                 print(f'ok   {path}  hand-off command is valid bash')
                 continue
             # On Windows `bash` is WSL, and WSL refuses to start when its virtual disk is locked. It
-            # reports that on stdout, in UTF-16, and exits non-zero, which looks exactly like invalid
-            # bash unless it is filtered out. Say the environment was the problem instead of
-            # blaming the workflow.
-            combined = f'{result.stdout}\n{result.stderr}'.lower()
-            if any(hint in combined for hint in ('wsl', 'translate', 'vhd', 'intellijeno')):
-                print(f'skip {path}  could not run bash, so the hand-off was not syntax checked')
-                print('     (this machine has no usable bash right now; the workflow was left alone)')
+            # reports that on stdout as UTF-16 and exits non-zero, which looks exactly like invalid
+            # bash. Strip the null bytes so the message can actually be matched, then say the
+            # environment was at fault instead of blaming the workflow.
+            combined = f'{result.stdout}\n{result.stderr}'.replace('\x00', '').lower()
+            if any(hint in combined for hint in ('wsl', 'translate', '.vhd', 'intellijeno')):
+                print(f'skip {path}  no usable bash on this machine, so the hand-off was not syntax checked')
                 continue
             noise = [l for l in result.stderr.splitlines() if 'wsl' not in l and 'translate' not in l]
             print(f'FAIL {path}  hand-off command is not valid bash: {noise}')
