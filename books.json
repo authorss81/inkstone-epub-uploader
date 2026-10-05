@@ -53,6 +53,76 @@
       "title": "The War of Borrowed Gods",
       "epub": "book/book-37081416200848305.epub.enc",
       "account": "second"
+    },
+    {
+      "id": 9,
+      "bookId": "37106597700177205",
+      "title": "The Worldroot Engineer",
+      "epub": "book/book-37106597700177205.epub.enc",
+      "account": "second"
+    },
+    {
+      "id": 10,
+      "bookId": "37107727208061505",
+      "title": "The Memory Cartographer",
+      "epub": "book/book-37107727208061505.epub.enc",
+      "account": "second"
+    },
+    {
+      "id": 11,
+      "bookId": "37107732400196105",
+      "title": "The Knight of Ten Thousand Paths",
+      "epub": "book/book-37107732400196105.epub.enc",
+      "account": "second"
+    },
+    {
+      "id": 12,
+      "bookId": "37106674108045505",
+      "title": "The Tower of Borrowed Years",
+      "epub": "book/book-37106674108045505.epub.enc",
+      "account": "second"
+    },
+    {
+      "id": 13,
+      "bookId": "37107745608061905",
+      "title": "The Clerk at the End of the World",
+      "epub": "book/book-37107745608061905.epub.enc",
+      "account": "second"
+    },
+    {
+      "id": 14,
+      "bookId": "37107748308062205",
+      "title": "The Debt Ledger of Saint Vess",
+      "epub": "book/book-37107748308062205.epub.enc",
+      "account": "second"
+    },
+    {
+      "id": 15,
+      "bookId": "37107234900185705",
+      "title": "The Harbour Register",
+      "epub": "book/book-37107234900185705.epub.enc",
+      "account": "second"
+    },
+    {
+      "id": 16,
+      "bookId": "37107599300192305",
+      "title": "The Ninth Furnace",
+      "epub": "book/book-37107599300192305.epub.enc",
+      "account": "second"
+    },
+    {
+      "id": 17,
+      "bookId": "37107668708060505",
+      "title": "The Dragon Contract Auditor",
+      "epub": "book/book-37107668708060505.epub.enc",
+      "account": "second"
+    },
+    {
+      "id": 18,
+      "bookId": "37091943400987205",
+      "title": "The Dungeon Architect",
+      "epub": "book/book-37091943400987205.epub.enc",
+      "account": "second"
     }
   ]
 }
