@@ -137,6 +137,9 @@ try {
         continue;
       }
 
+      const before = await inkstone.page.evaluate(() =>
+        [...document.querySelectorAll('img')].find((i) => /bookcover|cover\//.test(i.src || ''))?.src || '');
+
       // The real <input type=file> only exists once the cover modal is open. The button labelled
       // "Upload" is the one that opens it; the wrapper's class is CSS-module hashed, so match on the
       // label instead of on ".book_cover_wrap", which never matches the generated name.
@@ -166,34 +169,55 @@ try {
 
       await input.setInputFiles(file);
       console.log('[cover]   file chosen, waiting for the upload');
-      await inkstone.page.waitForTimeout(12000);
+      await inkstone.page.waitForTimeout(9000);
 
-      // The modal may need its own confirmation before the cover is actually attached.
-      const confirm = inkstone.page.locator(
-        '[class*="modal"] button:has-text("upload"), [class*="modal"] button:has-text("Upload"), [class*="modal"] button:has-text("confirm"), [class*="modal"] button:has-text("OK")',
-      ).first();
-      if (await confirm.count()) {
-        await confirm.click({ timeout: 10000 }).catch(() => {});
-        await inkstone.page.waitForTimeout(6000);
+      // Choosing a file adds a "confirm" button to the modal. Match on the exact label: a substring
+      // match for "upload" hits the Upload button first, which does nothing, and then the modal is
+      // dismissed and the selection is lost. That is why an earlier run reported success and changed
+      // nothing at all.
+      const confirmed = await inkstone.page.evaluate(() => {
+        const scope = document.querySelector('[class*=modal], [role=dialog]') || document;
+        const btn = [...scope.querySelectorAll('button')]
+          .find((b) => (b.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase() === 'confirm');
+        if (!btn) return false;
+        btn.click();
+        return true;
+      });
+      if (!confirmed) {
+        console.log('[cover]   the modal never offered a confirm button, cover not applied');
+        results.push({ ...p, ok: false, why: 'no confirm button' });
+        await inkstone.page.keyboard.press('Escape').catch(() => {});
+        continue;
       }
-      await inkstone.page.keyboard.press('Escape').catch(() => {});
-      await inkstone.page.waitForTimeout(2000);
+      console.log('[cover]   confirmed');
+      await inkstone.page.waitForTimeout(7000);
 
       // The settings form saves with "update settings", not "create".
-      const submit = inkstone.page
-        .locator('button:has-text("update settings"), button:has-text("Update settings"), button:has-text("save"), button:has-text("Save")')
-        .first();
-      if (await submit.count()) {
-        await submit.click({ timeout: 15000 }).catch(() => {});
-        await inkstone.page.waitForTimeout(9000);
-      } else {
+      const submitted = await inkstone.page.evaluate(() => {
+        const btn = [...document.querySelectorAll('button')]
+          .find((b) => /^(update settings|save)$/i.test((b.textContent || '').replace(/\s+/g, ' ').trim()));
+        if (!btn) return false;
+        btn.click();
+        return true;
+      });
+      if (!submitted) {
         console.log('[cover]   no submit button found, the cover was not saved');
         results.push({ ...p, ok: false, why: 'no submit button' });
         continue;
       }
+      await inkstone.page.waitForTimeout(9000);
+
+      // Verify. Reporting success without checking is how fifteen novels silently kept their
+      // placeholder covers while the log said everything was fine.
+      const coverOf = () => inkstone.page.evaluate(() =>
+        [...document.querySelectorAll('img')].find((i) => /bookcover|cover\//.test(i.src || ''))?.src || '');
+      await inkstone.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await inkstone.page.waitForTimeout(6000);
+      const after = await coverOf();
+      const changed = Boolean(after) && after !== before;
+      console.log(changed ? '[cover]   cover changed, verified' : '[cover]   cover did NOT change');
       await inkstone.snapshot(`cover-${p.bookId}`);
-      console.log('[cover]   done');
-      results.push({ ...p, ok: true });
+      results.push({ ...p, ok: changed, why: changed ? '' : 'cover unchanged' });
     } catch (err) {
       console.log(`[cover]   failed: ${err.message.split('\n')[0]}`);
       results.push({ ...p, ok: false, why: err.message.split('\n')[0] });
