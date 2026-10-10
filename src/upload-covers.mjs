@@ -90,10 +90,23 @@ if (!apply) {
   process.exit(0);
 }
 
+// This only ever reads the already-unpacked session file, so it needs no passphrase of its own.
+// Default to the unpacked per-account session so it works without any environment set up.
+const defaultSession = join('work', 'session', `${account}.json`);
+if (!process.env.SESSION_PATH && existsSync(defaultSession)) process.env.SESSION_PATH = defaultSession;
+
 const inkstone = new Inkstone({
   bookId: '0',
-  sessionPath: process.env.SESSION_PATH || null,
+  sessionPath: process.env.SESSION_PATH || defaultSession,
 });
+
+if (!existsSync(process.env.SESSION_PATH)) {
+  console.error(`[cover] no session at ${process.env.SESSION_PATH}. Unpack the vault first:`);
+  console.error('  $env:VAULT_PASSPHRASE = Read-Host "vault passphrase"');
+  console.error('  node src/vault.mjs unpack');
+  process.exit(1);
+}
+console.log(`[cover] using session ${process.env.SESSION_PATH}`);
 
 await inkstone.launch();
 const results = [];
