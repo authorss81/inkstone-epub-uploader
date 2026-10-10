@@ -111,7 +111,16 @@ console.log(`[cover] using session ${process.env.SESSION_PATH}`);
 await inkstone.launch();
 const results = [];
 try {
-  for (const p of found) {
+  // Without this the run reports "no file input found" for every novel, because an expired session
+  // just redirects to the sign-in page. That message sent me looking for a broken selector.
+  if (!(await inkstone.isAuthenticated())) {
+    console.error('[cover] the stored session is not signed in, so there is no form to fill.');
+    console.error('[cover] sign in to that account in a browser, export the cookies, then:');
+    console.error(`[cover]   node src/import-cookies.mjs "<cookies.json>" --account ${account}`);
+    console.error('[cover] then git add vault && git commit -m "chore: refresh session" && npm run push:vault');
+  } else {
+    console.log('[cover] signed in');
+    for (const p of found) {
     const file = join(imageDir, p.image);
     console.log(`\n[cover] ${p.title} (${p.bookId})`);
     try {
@@ -173,3 +182,4 @@ const good = results.filter((r) => r.ok);
 console.log(`\n[cover] ${good.length} of ${results.length} covers set`);
 for (const r of results) console.log(`[cover]   ${r.ok ? 'ok  ' : 'FAIL'} ${r.title}${r.why ? ` (${r.why})` : ''}`);
 void extname;
+process.exitCode = results.length && good.length === results.length ? 0 : 1;
