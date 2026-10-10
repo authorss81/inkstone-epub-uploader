@@ -124,29 +124,37 @@ try {
     const file = join(imageDir, p.image);
     console.log(`\n[cover] ${p.title} (${p.bookId})`);
     try {
-      // The create form doubles as the edit form; CBID in the path is what turns it into an update.
-      const url = `https://inkstone.webnovel.com/novels/create/${p.bookId}`;
+      // The settings page, not the create page: /novels/create/<CBID> is a 404, and /novels/setting/<CBID>
+      // is the form that holds the existing novel and submits updateNovel.
+      const url = `https://inkstone.webnovel.com/novels/setting/${p.bookId}`;
       await inkstone.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await inkstone.page.waitForTimeout(6000);
 
-      // The cover widget is a placeholder box that opens a modal, and the real <input type=file>
-      // only exists once that modal is open.
+      const onForm = await inkstone.page.locator('#bookTitle').count();
+      if (!onForm) {
+        console.log(`[cover]   ${url} did not load the novel form`);
+        results.push({ ...p, ok: false, why: 'settings form did not load' });
+        continue;
+      }
+
+      // The real <input type=file> only exists once the cover modal is open. The button labelled
+      // "Upload" is the one that opens it; the wrapper's class is CSS-module hashed, so match on the
+      // label instead of on ".book_cover_wrap", which never matches the generated name.
       let input = inkstone.page.locator('input[type=file]').first();
       if (!(await input.count())) {
-        const boxes = [
-          '.book_cover_wrap',
-          '[class*="book_cover_wrap"]',
-          '[class*="book_cover"]',
-          'img[class*="cover"]',
-        ];
-        for (const sel of boxes) {
-          const box = inkstone.page.locator(sel).first();
-          if (await box.count()) {
-            await box.click({ timeout: 10000 }).catch(() => {});
-            await inkstone.page.waitForTimeout(2500);
-            break;
-          }
+        // Clicked through the DOM rather than with Playwright: the button sits under an overlay that
+        // makes the actionability check wait forever, but a plain .click() on the element works.
+        const opened = await inkstone.page.evaluate(() => {
+          const btn = [...document.querySelectorAll('button')]
+            .find((b) => (b.textContent || '').trim() === 'Upload');
+          if (!btn) return false;
+          btn.click();
+          return true;
+        });
+        if (!opened) {
+          await inkstone.page.locator('[class*="book_cover"]').first().click({ timeout: 10000 }).catch(() => {});
         }
+        await inkstone.page.waitForTimeout(4000);
         input = inkstone.page.locator('input[type=file]').first();
       }
 
@@ -157,17 +165,34 @@ try {
       }
 
       await input.setInputFiles(file);
-      console.log(`[cover]   file chosen, waiting for the upload to finish`);
-      // The site uploads on selection and swaps the placeholder for the real cover.
+      console.log('[cover]   file chosen, waiting for the upload');
       await inkstone.page.waitForTimeout(12000);
 
-      const submit = inkstone.page.locator('button:has-text("create"), button:has-text("Create"), button:has-text("save"), button:has-text("Save")').first();
+      // The modal may need its own confirmation before the cover is actually attached.
+      const confirm = inkstone.page.locator(
+        '[class*="modal"] button:has-text("upload"), [class*="modal"] button:has-text("Upload"), [class*="modal"] button:has-text("confirm"), [class*="modal"] button:has-text("OK")',
+      ).first();
+      if (await confirm.count()) {
+        await confirm.click({ timeout: 10000 }).catch(() => {});
+        await inkstone.page.waitForTimeout(6000);
+      }
+      await inkstone.page.keyboard.press('Escape').catch(() => {});
+      await inkstone.page.waitForTimeout(2000);
+
+      // The settings form saves with "update settings", not "create".
+      const submit = inkstone.page
+        .locator('button:has-text("update settings"), button:has-text("Update settings"), button:has-text("save"), button:has-text("Save")')
+        .first();
       if (await submit.count()) {
-        await submit.click({ timeout: 10000 }).catch(() => {});
-        await inkstone.page.waitForTimeout(8000);
+        await submit.click({ timeout: 15000 }).catch(() => {});
+        await inkstone.page.waitForTimeout(9000);
+      } else {
+        console.log('[cover]   no submit button found, the cover was not saved');
+        results.push({ ...p, ok: false, why: 'no submit button' });
+        continue;
       }
       await inkstone.snapshot(`cover-${p.bookId}`);
-      console.log(`[cover]   done`);
+      console.log('[cover]   done');
       results.push({ ...p, ok: true });
     } catch (err) {
       console.log(`[cover]   failed: ${err.message.split('\n')[0]}`);
