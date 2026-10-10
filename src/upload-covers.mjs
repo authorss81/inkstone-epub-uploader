@@ -173,6 +173,7 @@ try {
       console.log(`[cover]   failed: ${err.message.split('\n')[0]}`);
       results.push({ ...p, ok: false, why: err.message.split('\n')[0] });
     }
+    }
   }
 } finally {
   await inkstone.close();
