@@ -110,7 +110,7 @@ jobs:
           ACCOUNT_NAME: ${{ inputs.account }}
         run: |
           set -o pipefail
-          args=(--title "${{ inputs.title }}" --gender "${{ inputs.gender }}" \
+          args=(--account "${{ inputs.account }}" --title "${{ inputs.title }}" --gender "${{ inputs.gender }}" \
                 --length "${{ inputs.length }}" --warning "${{ inputs.warning }}")
           [ -n "${{ inputs.genre }}" ] && args+=(--genre "${{ inputs.genre }}")
           [ -n "${{ inputs.synopsis }}" ] && args+=(--synopsis "${{ inputs.synopsis }}")
