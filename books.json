@@ -123,6 +123,111 @@
       "title": "The Dungeon Architect",
       "epub": "book/book-37091943400987205.epub.enc",
       "account": "second"
+    },
+    {
+      "id": 19,
+      "bookId": "37291015800408305",
+      "title": "The Apocalypse Auctioneer",
+      "epub": "book/book-37291015800408305.epub.enc",
+      "account": "third"
+    },
+    {
+      "id": 20,
+      "bookId": "37290666000402205",
+      "title": "The Appetite Index",
+      "epub": "book/book-37290666000402205.epub.enc",
+      "account": "third"
+    },
+    {
+      "id": 21,
+      "bookId": "37290686808299505",
+      "title": "The Earthside License",
+      "epub": "book/book-37290686808299505.epub.enc",
+      "account": "third"
+    },
+    {
+      "id": 22,
+      "bookId": "37291308408309305",
+      "title": "The Glass Harbor",
+      "epub": "book/book-37291308408309305.epub.enc",
+      "account": "third"
+    },
+    {
+      "id": 23,
+      "bookId": "37291333400412305",
+      "title": "The Last System Admin",
+      "epub": "book/book-37291333400412305.epub.enc",
+      "account": "third"
+    },
+    {
+      "id": 24,
+      "bookId": "37291117700409405",
+      "title": "The Soul Network",
+      "epub": "book/book-37291117700409405.epub.enc",
+      "account": "third"
+    },
+    {
+      "id": 25,
+      "bookId": "37290695600402305",
+      "title": "The Tutorial Tribunal",
+      "epub": "book/book-37290695600402305.epub.enc",
+      "account": "third"
+    },
+    {
+      "id": 26,
+      "bookId": "37291188108307605",
+      "title": "Reincarnated as a System in a Cultivation World",
+      "epub": "book/book-37291188108307605.epub.enc",
+      "account": "third"
+    },
+    {
+      "id": 27,
+      "bookId": "37291443000414305",
+      "title": "Deducing_the_Dao-_From_Menial_to_Evergreen_in_the_Martial_Way_english_v5",
+      "epub": "book/book-37291443000414305.epub.enc",
+      "account": "third"
+    },
+    {
+      "id": 28,
+      "bookId": "37290763200403005",
+      "title": "Endless_Lifespan-_I_Boiled_the_Heavenly_Dao_to_Death_english_v5",
+      "epub": "book/book-37290763200403005.epub.enc",
+      "account": "third"
+    },
+    {
+      "id": 29,
+      "bookId": "37291581300416705",
+      "title": "Ranked by Desire",
+      "epub": "book/book-37291581300416705.epub.enc",
+      "account": "third"
+    },
+    {
+      "id": 30,
+      "bookId": "37292198200423805",
+      "title": "Reincarnation_World-_I_Am_the_System_english_v4",
+      "epub": "book/book-37292198200423805.epub.enc",
+      "account": "third"
+    },
+    {
+      "id": 31,
+      "bookId": "37292123200423005",
+      "title": "I Am the System",
+      "epub": "book/book-37292123200423005.epub.enc",
+      "account": "third"
+    },
+    {
+      "id": 32,
+      "bookId": "37291103200409205",
+      "title": "Xuanhuan-_I_Am_the_System_english_v4",
+      "epub": "book/book-37291103200409205.epub.enc",
+      "account": "third"
+    },
+    {
+      "id": 33,
+      "bookId": "37292579800427705",
+      "title": "The Lotus and the Furnace",
+      "epub": "book/book-37292579800427705.epub.enc",
+      "account": "third"
     }
   ]
 }
