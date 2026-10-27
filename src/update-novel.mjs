@@ -51,7 +51,19 @@ if (!Array.isArray(plan)) {
   console.error('[update] the plan has to be a JSON array of { cbid, synopsis, title? }');
   process.exit(1);
 }
-const targets = plan.filter((p) => p && p.cbid).filter((p) => !only || String(p.cbid) === String(only));
+let targets = plan.filter((p) => p && p.cbid).filter((p) => !only || String(p.cbid) === String(only));
+
+// A probe with an empty plan is the cheap way to see what the account actually holds right now:
+// every novel in books.json for that account gets its title and synopsis length read back.
+if (!targets.length && probe) {
+  const config = JSON.parse(readFileSync('books.json', 'utf8'));
+  targets = (config.books || [])
+    .filter((b) => (b.account || 'main') === account)
+    .map((b) => ({ cbid: String(b.bookId), title: b.title }))
+    .filter((p) => !only || p.cbid === String(only));
+  console.log(`[update] probe only, no plan: reading back ${targets.length} novel(s) from books.json`);
+}
+
 if (!targets.length) {
   console.error('[update] the plan had no usable entries');
   process.exit(1);
