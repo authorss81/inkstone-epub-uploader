@@ -42,8 +42,12 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-browsers-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
+      # ubuntu-latest already ships Chrome, and inkstone.mjs falls back to the system browser,
+      # so the Playwright download only has to run when there really is no browser on the image.
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: |
+          test -x /usr/bin/google-chrome && echo 'using the image browser' 
+          test -x /usr/bin/google-chrome || npx playwright install --with-deps chromium
 
       - name: Restore vault
         env:
