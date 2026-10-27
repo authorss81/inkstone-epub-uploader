@@ -46,7 +46,7 @@ on:
         default: false
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: inkstone-create-novel
@@ -118,6 +118,14 @@ jobs:
           [ -n "${{ inputs.tags }}" ] && args+=(--tags "${{ inputs.tags }}")
           [ "${{ inputs.create }}" = "true" ] && args+=(--create)
           node src/create-novel.mjs "${args[@]}" | tee create-output.txt
+
+      # The run rotates the site's auth token, and throwing that away is why a stored session used to
+      # stop working an hour later. Sealing it back means the next workflow starts from a fresh token.
+      - name: Save the session back to the vault
+        if: always()
+        env:
+          VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
+        run: ./scripts/seal-session-and-push.sh "${{ inputs.account }}" || echo "::warning::could not push the refreshed session"
 
       - name: Summary
         if: always()
