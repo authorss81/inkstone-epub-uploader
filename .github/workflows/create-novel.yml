@@ -125,7 +125,7 @@ jobs:
         if: always()
         env:
           VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
-        run: ./scripts/seal-session-and-push.sh "${{ inputs.account }}" || echo "::warning::could not push the refreshed session"
+        run: bash scripts/seal-session-and-push.sh "${{ inputs.account }}" || echo "::warning::could not push the refreshed session"
 
       - name: Summary
         if: always()
