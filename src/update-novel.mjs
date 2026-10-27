@@ -122,15 +122,29 @@ async function readState(page) {
 }
 
 async function fill(page, { title, synopsis }) {
-  if (title) {
-    await page.locator('#bookTitle').fill(title);
-  }
+  // React keeps its own copy of every field value, so assigning `.value` alone is silently ignored on
+  // submit. The native setter plus an input event is the one shape React's change tracking accepts.
+  const setField = async (selector, value) => {
+    if (!value) return;
+    await page.locator(selector).first().evaluate((node, text) => {
+      const proto =
+        node.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+      setter.call(node, text);
+      node.dispatchEvent(new Event('input', { bubbles: true }));
+      node.dispatchEvent(new Event('change', { bubbles: true }));
+      node.blur();
+    }, value);
+  };
+
+  await setField('#bookTitle', title);
+
   if (synopsis) {
     const el = page.locator('[data-nvl-synopsis="1"]').first();
     const tag = await el.evaluate((node) => node.tagName.toLowerCase());
     const editable = await el.evaluate((node) => node.getAttribute('contenteditable'));
     if (tag === 'textarea' || tag === 'input') {
-      await el.fill(synopsis);
+      await setField('[data-nvl-synopsis="1"]', synopsis);
     } else if (editable !== null) {
       await el.click();
       await page.keyboard.press('Control+A');
@@ -141,6 +155,14 @@ async function fill(page, { title, synopsis }) {
       throw new Error(`the synopsis field is a <${tag}> and I do not know how to fill it`);
     }
   }
+
+  // Read the fields back before submitting: a form that quietly kept the old value would otherwise
+  // look exactly like a save the site silently dropped.
+  const now = await readState(page);
+  const titleOk = !title || norm(now.title) === norm(title);
+  const synOk = !synopsis || norm(now.synopsis) === norm(synopsis);
+  console.log(`[update]   filled: title ${titleOk ? 'ok' : 'DID NOT STICK'}, synopsis ${synOk ? 'ok' : 'DID NOT STICK'} (${now.synopsis.length} chars)`);
+  if (!titleOk || !synOk) throw new Error('the form did not accept the typed values');
 }
 
 async function submit(page) {
