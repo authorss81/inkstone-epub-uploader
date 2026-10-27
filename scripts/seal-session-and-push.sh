@@ -4,7 +4,11 @@
 # create-novel and update-novel each rotate the site's auth token while they run, but for a long time
 # they threw that rotation away, so the stored cookie aged out an hour later and every workflow had
 # to be fed a fresh export. Sealing the one file the run touched (rather than the whole vault) keeps
-# this cheap, and parenting on the previous vault commit keeps the push a fast-forward.
+# this cheap.
+#
+# The tree is built from the previous vault commit plus this one file, never from the main checkout:
+# a main checkout drags workflow files into the vault commit, and GitHub refuses to let the Actions
+# token create or update a workflow file, which kills the push and loses the fresh token.
 set -euo pipefail
 
 account="${1:?usage: seal-session-and-push.sh <account> [message]}"
@@ -25,21 +29,25 @@ fi
 
 node src/vault.mjs seal "$plain" "$enc"
 
-git add "$enc"
-if git diff --cached --quiet; then
-  echo "the $account session is unchanged"
-  exit 0
-fi
-
-git fetch --depth 1 origin "+refs/heads/$branch:refs/remotes/origin/$branch" 2>/dev/null || true
 parent=$(git rev-parse --verify --quiet "refs/remotes/origin/$branch" || true)
-tree=$(git write-tree)
 
 if [ -n "$parent" ]; then
+  git read-tree "$parent"
+  git add "$enc"
+  tree=$(git write-tree)
+  if [ "$tree" = "$(git rev-parse "$parent^{tree}")" ]; then
+    echo "the $account session is unchanged"
+    exit 0
+  fi
   commit=$(git commit-tree "$tree" -p "$parent" -m "$message")
   git push -q origin "$commit:refs/heads/$branch"
   echo "pushed the $account session to $branch"
 else
+  git add "$enc"
+  if git diff --cached --quiet; then
+    echo "the $account session is unchanged"
+    exit 0
+  fi
   git commit -q -m "$message"
   git push -q origin "HEAD:refs/heads/$branch"
   echo "created $branch with the $account session"
