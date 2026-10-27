@@ -98,7 +98,26 @@ export class Inkstone {
       args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
     };
     const channel = process.env.BROWSER_CHANNEL || undefined;
-    const executablePath = process.env.BROWSER_EXECUTABLE_PATH || undefined;
+    let executablePath = process.env.BROWSER_EXECUTABLE_PATH || undefined;
+
+    // Playwright ships no browser of its own until "npx playwright install" runs, and that download
+    // times out on plenty of networks. Rather than fail, fall back to a browser Windows already has.
+    if (!executablePath && !channel) {
+      const candidates = [
+        'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+        'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        '/usr/bin/google-chrome',
+        '/usr/bin/chromium',
+        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      ];
+      const found = candidates.find((p) => existsSync(p));
+      if (found) {
+        executablePath = found;
+        console.log(`[inkstone] using the system browser: ${found}`);
+      }
+    }
 
     if (this.profileDir) {
       // A real, persistent profile: sign in with Google once, reuse the session forever. No

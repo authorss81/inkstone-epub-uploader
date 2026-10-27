@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { encrypt } from './vault.mjs';
+import { encrypt, decryptToBuffer } from './vault.mjs';
 
 // Reads a Cookie Editor / EditThisCookie / Chrome-extension JSON export and seals it into the
 // vault as a Playwright storageState. The export comes from a normal, human-driven browser, which
@@ -115,5 +115,23 @@ rmSync(tmp, { recursive: true, force: true });
 rmSync(plain, { force: true });
 
 console.log(`[import] sealed into ${OUT} for account "${account}"`);
+
+// Read it straight back. If the passphrase typed here is not the one in the CI secret, the file is
+// unusable and nothing will complain until a workflow dies hours later with "unable to authenticate".
+let readable = true;
+try {
+  decryptToBuffer(OUT);
+} catch {
+  readable = false;
+}
+if (!readable) {
+  console.error('[import] the file just written cannot be read back with the passphrase you set.');
+  console.error('[import] that means VAULT_PASSPHRASE here differs from the VAULT_PASSPHRASE secret');
+  console.error('[import] in GitHub. Nothing was harmed, but do not commit this file. Fix the passphrase');
+  console.error('[import] and run the import again.');
+  process.exit(1);
+}
+console.log('[import] verified: the sealed file reads back with this passphrase');
+
 console.log('[import] now commit it:');
-console.log('         git add vault && git commit -m "chore: refresh inkstone session" && git push');
+console.log('         git add vault && git commit -m "chore: refresh inkstone session" && npm run push:vault');

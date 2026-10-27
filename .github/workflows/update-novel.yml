@@ -1,0 +1,131 @@
+name: Update an existing novel
+
+on:
+  workflow_dispatch:
+    inputs:
+      account:
+        description: 'Which stored session to use: main, second or third'
+        required: false
+        default: 'third'
+      plan:
+        description: 'JSON array of { cbid, synopsis, title? } entries'
+        required: true
+      apply:
+        description: 'Actually submit the form. Leave unchecked to only read the live values back.'
+        type: boolean
+        required: false
+        default: false
+      probe:
+        description: 'Dump every field on the settings form'
+        type: boolean
+        required: false
+        default: false
+      only:
+        description: 'Only this CBID (optional)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: inkstone-update-novel
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      # ubuntu-latest already ships Chrome, and inkstone.mjs falls back to the system browser,
+      # so the Playwright download only has to run when there really is no browser on the image.
+      - name: Install Chromium
+        run: |
+          test -x /usr/bin/google-chrome && echo 'using the image browser' 
+          test -x /usr/bin/google-chrome || npx playwright install --with-deps chromium
+
+      - name: Restore vault
+        env:
+          VAULT_BRANCH: vault-state
+        run: |
+          git fetch --depth 1 origin "+refs/heads/${{ env.VAULT_BRANCH }}:refs/remotes/origin/${{ env.VAULT_BRANCH }}" 2>/dev/null || true
+          if git rev-parse --verify --quiet "origin/${{ env.VAULT_BRANCH }}" >/dev/null; then
+            while IFS= read -r path; do
+              [ -n "$path" ] || continue
+              git restore --source="origin/${{ env.VAULT_BRANCH }}" -- "$path"
+            done < <(git ls-tree -r --name-only "origin/${{ env.VAULT_BRANCH }}" -- vault)
+          fi
+
+      - name: Unpack vault
+        env:
+          VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
+        run: |
+          node src/vault.mjs unpack
+          if [ -f work/session/storage-state.json ] && [ ! -f work/session/main.json ]; then
+            mv work/session/storage-state.json work/session/main.json
+          fi
+          if [ ! -f "work/session/${{ inputs.account }}.json" ]; then
+            echo "::error::no session stored for account '${{ inputs.account }}'"
+            exit 1
+          fi
+
+      - name: Update
+        env:
+          VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
+          SESSION_PATH: ${{ github.workspace }}/work/session/${{ inputs.account }}.json
+          ARTIFACT_DIR: ${{ github.workspace }}/artifacts
+          ACCOUNT_NAME: ${{ inputs.account }}
+          PLAN: ${{ inputs.plan }}
+          ONLY: ${{ inputs.only }}
+        run: |
+          set -o pipefail
+          printf '%s' "$PLAN" > plan.json
+          args=(--account "$ACCOUNT_NAME" --plan-file plan.json)
+          [ "${{ inputs.apply }}" = "true" ] && args+=(--apply)
+          [ "${{ inputs.probe }}" = "true" ] && args+=(--probe)
+          [ -n "$ONLY" ] && args+=(--only "$ONLY")
+          node src/update-novel.mjs "${args[@]}" | tee update-output.txt
+
+      - name: Save the session back to the vault
+        if: always()
+        env:
+          VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
+        run: bash scripts/seal-session-and-push.sh "${{ inputs.account }}" || echo "::warning::could not push the refreshed session"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Update novel: ${{ inputs.account }}"
+            echo ""
+            echo '```'
+            tail -n 60 update-output.txt 2>/dev/null || echo "(no output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: update-novel-${{ github.run_number }}
+          path: artifacts
+          retention-days: 14
+          if-no-files-found: ignore

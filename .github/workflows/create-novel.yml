@@ -46,7 +46,7 @@ on:
         default: false
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: inkstone-create-novel
@@ -75,8 +75,12 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-browsers-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
+      # ubuntu-latest already ships Chrome, and inkstone.mjs falls back to the system browser,
+      # so the Playwright download only has to run when there really is no browser on the image.
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: |
+          test -x /usr/bin/google-chrome && echo 'using the image browser' 
+          test -x /usr/bin/google-chrome || npx playwright install --with-deps chromium
 
       - name: Restore vault
         env:
@@ -110,7 +114,7 @@ jobs:
           ACCOUNT_NAME: ${{ inputs.account }}
         run: |
           set -o pipefail
-          args=(--title "${{ inputs.title }}" --gender "${{ inputs.gender }}" \
+          args=(--account "${{ inputs.account }}" --title "${{ inputs.title }}" --gender "${{ inputs.gender }}" \
                 --length "${{ inputs.length }}" --warning "${{ inputs.warning }}")
           [ -n "${{ inputs.genre }}" ] && args+=(--genre "${{ inputs.genre }}")
           [ -n "${{ inputs.synopsis }}" ] && args+=(--synopsis "${{ inputs.synopsis }}")
@@ -118,6 +122,14 @@ jobs:
           [ -n "${{ inputs.tags }}" ] && args+=(--tags "${{ inputs.tags }}")
           [ "${{ inputs.create }}" = "true" ] && args+=(--create)
           node src/create-novel.mjs "${args[@]}" | tee create-output.txt
+
+      # The run rotates the site's auth token, and throwing that away is why a stored session used to
+      # stop working an hour later. Sealing it back means the next workflow starts from a fresh token.
+      - name: Save the session back to the vault
+        if: always()
+        env:
+          VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
+        run: bash scripts/seal-session-and-push.sh "${{ inputs.account }}" || echo "::warning::could not push the refreshed session"
 
       - name: Summary
         if: always()

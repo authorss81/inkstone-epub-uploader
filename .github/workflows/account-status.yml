@@ -13,7 +13,7 @@ on:
         default: ''
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: inkstone-account-status
@@ -42,8 +42,12 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-browsers-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
+      # ubuntu-latest already ships Chrome, and inkstone.mjs falls back to the system browser,
+      # so the Playwright download only has to run when there really is no browser on the image.
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: |
+          test -x /usr/bin/google-chrome && echo 'using the image browser' 
+          test -x /usr/bin/google-chrome || npx playwright install --with-deps chromium
 
       - name: Restore vault
         env:
@@ -75,6 +79,12 @@ jobs:
           ARTIFACT_DIR: ${{ github.workspace }}/artifacts
           CHECK_BOOK_ID: ${{ inputs.book_id }}
         run: node src/account-status.mjs | tee status-output.txt
+
+      - name: Save the session back to the vault
+        if: always()
+        env:
+          VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
+        run: bash scripts/seal-session-and-push.sh "${{ inputs.account }}" || echo "::warning::could not push the refreshed session"
 
       - name: Summary
         if: always()
