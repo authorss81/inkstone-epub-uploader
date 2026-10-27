@@ -24,13 +24,21 @@ fi
 
 node src/vault.mjs pack
 
+# A run that was cancelled before "Restore vault"/"Unpack vault" still reaches this step (it is
+# `if: always()`), and packing an empty work/ would republish the checkout's stale vault over the
+# branch. That is how eighteen books' progress files went missing on 27 Oct. Refuse to save then.
+if [ -z "$(ls -A work/session 2>/dev/null)" ] && [ -z "$(ls -A work/state 2>/dev/null)" ]; then
+  echo "nothing was unpacked into work/, so there is nothing to save"
+  exit 0
+fi
+
 parent=$(git rev-parse --verify --quiet "refs/remotes/origin/$branch" || true)
 
 if [ -n "$parent" ]; then
-  # Base the commit on the previous save, then stage only vault/. `git add vault` never records a
-  # deletion, which matches pack(): it adds and updates, it does not prune.
+  # Base the commit on the previous save, then stage only vault/. --ignore-removal keeps a file the
+  # branch has but this worktree does not (a book sealed on another machine) instead of deleting it.
   git read-tree "$parent"
-  git add vault
+  git add --ignore-removal vault
   tree=$(git write-tree)
   if [ "$tree" = "$(git rev-parse "$parent^{tree}")" ]; then
     echo "vault unchanged"
@@ -40,7 +48,7 @@ if [ -n "$parent" ]; then
   git push -q origin "$commit:refs/heads/$branch"
   echo "pushed vault state to $branch, parented on the previous save"
 else
-  git add vault
+  git add --ignore-removal vault
   if git diff --cached --quiet; then
     echo "vault unchanged"
     exit 0

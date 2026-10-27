@@ -43,7 +43,7 @@ if [ -n "$parent" ]; then
   git push -q origin "$commit:refs/heads/$branch"
   echo "pushed the $account session to $branch"
 else
-  git add "$enc"
+  git add --ignore-removal "$enc"
   if git diff --cached --quiet; then
     echo "the $account session is unchanged"
     exit 0
