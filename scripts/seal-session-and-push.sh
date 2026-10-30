@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # Re-encrypt one account's session and push it straight to the vault branch.
 #
-# create-novel and update-novel each rotate the site's auth token while they run, but for a long time
-# they threw that rotation away, so the stored cookie aged out an hour later and every workflow had
-# to be fed a fresh export. Sealing the one file the run touched (rather than the whole vault) keeps
-# this cheap.
+# create-novel, update-novel and account-status each rotate the site's auth token while they run,
+# so the fresh token has to go back into the vault or the stored cookie ages out an hour later.
+# Sealing the one file the run touched (rather than the whole vault) keeps this cheap and stops a
+# status check from rewriting every other account's session.
 #
 # The tree is built from the previous vault commit plus this one file, never from the main checkout:
 # a main checkout drags workflow files into the vault commit, and GitHub refuses to let the Actions
 # token create or update a workflow file, which kills the push and loses the fresh token.
+#
+# The branch tip can move while this runs (publish saves progress every few chapters), so fetch the
+# parent for every attempt and retry the push instead of failing the session save on one race.
 set -euo pipefail
 
 account="${1:?usage: seal-session-and-push.sh <account> [message]}"
@@ -29,26 +32,35 @@ fi
 
 node src/vault.mjs seal "$plain" "$enc"
 
-parent=$(git rev-parse --verify --quiet "refs/remotes/origin/$branch" || true)
+fetch_parent() {
+  git fetch --depth 1 origin "+refs/heads/$branch:refs/remotes/origin/$branch" 2>/dev/null || true
+  git rev-parse --verify --quiet "refs/remotes/origin/$branch" || true
+}
 
-if [ -n "$parent" ]; then
+for attempt in 1 2 3; do
+  parent=$(fetch_parent)
+  if [ -z "$parent" ]; then
+    echo "there is no $branch branch to update"
+    exit 1
+  fi
+
   git read-tree "$parent"
-  git add "$enc"
+  git add --ignore-removal "$enc"
   tree=$(git write-tree)
   if [ "$tree" = "$(git rev-parse "$parent^{tree}")" ]; then
     echo "the $account session is unchanged"
     exit 0
   fi
+
   commit=$(git commit-tree "$tree" -p "$parent" -m "$message")
-  git push -q origin "$commit:refs/heads/$branch"
-  echo "pushed the $account session to $branch"
-else
-  git add --ignore-removal "$enc"
-  if git diff --cached --quiet; then
-    echo "the $account session is unchanged"
+  if git push -q origin "$commit:refs/heads/$branch"; then
+    echo "pushed the $account session to $branch"
     exit 0
   fi
-  git commit -q -m "$message"
-  git push -q origin "HEAD:refs/heads/$branch"
-  echo "created $branch with the $account session"
-fi
+
+  echo "push rejected on attempt $attempt, refetching the branch tip"
+  sleep $((attempt * 2))
+done
+
+echo "could not push the $account session after 3 attempts"
+exit 1

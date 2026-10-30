@@ -82,13 +82,14 @@ function describeExecError(err) {
   return out.split('\n').filter(Boolean).slice(-3).join(' / ') || 'no output';
 }
 
-// In CI this is scripts/seal-and-push.sh, which re-encrypts work/ into the vault and pushes it.
-// Locally, GIT_COMMIT=1 falls back to committing ASSETS_DIR directly when it is a git checkout.
+// In CI this is scripts/seal-and-push.sh, which re-encrypts the progress state (and this account's
+// rotated token) into the vault and pushes it. Locally, GIT_COMMIT=1 falls back to committing
+// ASSETS_DIR directly when it is a git checkout.
 function commitState(message) {
   const hook = process.env.PROGRESS_HOOK;
   if (hook) {
     try {
-      execFileSync(hook, [message], { stdio: 'pipe' });
+      execFileSync(hook, [message, ACCOUNT], { stdio: 'pipe' });
       log('progress sealed into the vault and pushed');
     } catch (err) {
       log(`progress save failed: ${describeExecError(err)}`);
@@ -283,11 +284,16 @@ async function main() {
     }
 
     let failures = 0;
-    for (let n = next; n <= end && published < MAX_CHAPTERS; n += 1) {
+    // Advance the chapter number only after a chapter is actually dealt with. A plain `for (...; n += 1)`
+    // moved past a failed chapter, so a transient editor timeout silently dropped it from the upload.
+    let n = next;
+    while (n <= end && published < MAX_CHAPTERS) {
       const chapter = book.chapter(n);
       if (chapter.wordCount < 10) {
         log(`chapter ${n} looks empty (${chapter.wordCount} words), skipping`);
         state.nextChapter = n + 1;
+        saveState(STATE_PATH, state);
+        n += 1;
         continue;
       }
 
@@ -315,6 +321,9 @@ async function main() {
         ].slice(-500);
         log(`chapter ${n} published (${published}/${MAX_CHAPTERS} this run)`);
 
+        // Write the rotated token out with the progress. Waiting until the end of the run means a
+        // failure mid-run seals the token the run *started* with, which may already have been spent.
+        await inkstone.saveSession().catch(() => {});
         saveState(STATE_PATH, state);
         if (published % COMMIT_EVERY === 0) commitState(`chore: progress through EPUB chapter ${n}`);
 
@@ -324,15 +333,25 @@ async function main() {
           inkstone.startKeepalive();
         }
 
-        if (published < MAX_CHAPTERS && n < end && DELAY_SECONDS > 0) await sleep(DELAY_SECONDS * 1000);
+        n += 1;
+        if (published < MAX_CHAPTERS && n <= end && DELAY_SECONDS > 0) await sleep(DELAY_SECONDS * 1000);
       } catch (err) {
         failures += 1;
         warn(`chapter ${n} failed: ${err.message}`);
+        await inkstone.saveSession().catch(() => {});
         saveState(STATE_PATH, state);
         commitState(`chore: record failure at EPUB chapter ${n}`);
         if (failures >= MAX_FAILURES) {
           stopped = `stopped after ${failures} consecutive failures`;
           break;
+        }
+        // A timed-out editor leaves the browser in a bad state. Start from a clean one before
+        // retrying the same chapter, rather than carrying the hang into every later attempt.
+        try {
+          await inkstone.restart();
+          inkstone.startKeepalive();
+        } catch {
+          /* the next attempt will surface the real problem */
         }
         await sleep(20000 * failures);
       }
@@ -372,6 +391,7 @@ async function main() {
 
   setOutput('book', label);
   setOutput('book_id', BOOK_ID);
+  setOutput('account', ACCOUNT);
   setOutput('published', published);
   setOutput('remaining', remaining);
   setOutput('next_chapter', state.nextChapter);

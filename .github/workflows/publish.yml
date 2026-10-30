@@ -127,7 +127,7 @@ jobs:
         env:
           VAULT_PASSPHRASE: ${{ secrets.VAULT_PASSPHRASE }}
         run: |
-          ./scripts/seal-and-push.sh "chore: upload progress"
+          ./scripts/seal-and-push.sh "chore: upload progress" "${{ steps.publish.outputs.account }}"
 
       - name: Summary
         if: always()

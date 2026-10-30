@@ -272,11 +272,25 @@ export class Inkstone {
   // session open matters because the auth token's 1 hour expiry is only refreshed by activity.
   startKeepalive() {
     if (this.usingProfile || this.keepaliveTimer) return;
+    this.keepaliveFailures = 0;
     this.keepaliveTimer = setInterval(async () => {
       const { body } = await this.apiGet('/tauthorweb/login/penname').catch(() => ({ body: null }));
       const alive = body?.returnCode === 200 || body?.code === 0;
-      this.sessionAlive = alive;
-      log(alive ? 'keepalive ok' : 'keepalive failed, the session may have expired');
+      // One failed ping is usually a network blip, not an expiry. Treating it as an expiry killed
+      // a two-day upload chain at chapter 631: a timed-out editor page was followed by a single
+      // failed ping, and the next three chapters refused to even try.
+      if (alive) {
+        this.keepaliveFailures = 0;
+        this.sessionAlive = true;
+      } else {
+        this.keepaliveFailures = (this.keepaliveFailures ?? 0) + 1;
+        this.sessionAlive = this.keepaliveFailures < 2;
+      }
+      log(
+        alive
+          ? 'keepalive ok'
+          : `keepalive failed (${this.keepaliveFailures} in a row), the session may have expired`,
+      );
     }, KEEPALIVE_MS);
     this.keepaliveTimer.unref?.();
   }

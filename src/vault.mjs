@@ -83,12 +83,20 @@ function unpack() {
 // Walk both sides: files already in the vault, plus anything new that appeared in work/.
 // Compare plaintext, not ciphertext: AES-GCM uses a random IV, so re-encrypting unchanged data
 // would produce a different blob every run and commit 44 MB of noise on each one.
-function pack() {
+//
+// `include` narrows what gets packed. A publish run must save its own progress and its own
+// account's rotated token, but it must not write back the *other* accounts' session files it
+// unpacked at startup: those copies are stale, and writing them would revert a token another
+// workflow just refreshed.
+function pack({ include = null } = {}) {
   const rels = new Set(walk(VAULT_DIR, '.enc').map((p) => relative(VAULT_DIR, p).slice(0, -'.enc'.length)));
   for (const plainPath of walk(WORK_DIR, '')) rels.add(relative(WORK_DIR, plainPath));
 
+  const wanted = (rel) => !include || include.some((p) => rel === p || rel.startsWith(`${p}/`));
+
   let changed = 0;
   for (const rel of [...rels].sort()) {
+    if (!wanted(rel)) continue;
     const plainPath = join(WORK_DIR, rel);
     const encPath = join(VAULT_DIR, `${rel}.enc`);
     if (!existsSync(plainPath)) continue;
@@ -110,8 +118,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const command = process.argv[2];
   try {
     if (command === 'unpack') log(`unpacked ${unpack()} file(s) into ${WORK_DIR}`);
-    else if (command === 'pack') log(`packed ${pack()} file(s) into ${VAULT_DIR}`);
-    else if (command === 'seal') {
+    else if (command === 'pack') {
+      const onlyIndex = process.argv.indexOf('--only');
+      const include =
+        onlyIndex > -1
+          ? String(process.argv[onlyIndex + 1] ?? '')
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : null;
+      log(`packed ${pack({ include })} file(s) into ${VAULT_DIR}`);
+    } else if (command === 'seal') {
       const [input, output] = process.argv.slice(3);
       encrypt(readFileSync(input), output);
       log(`sealed ${input} -> ${output}`);
