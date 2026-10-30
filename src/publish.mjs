@@ -405,7 +405,19 @@ async function main() {
     const upcoming = nextBook(config);
     log(`queue continues; the next run will start on "${upcoming?.title ?? upcoming?.bookId}"`);
   }
-  if (stopped) log(stopped);
+  // A stalled chapter leaves `remaining` above zero, and the workflow hands off whenever a run
+  // succeeds. Retrying the same chapter forever would burn Actions minutes with no progress, so
+  // stop the chain here instead: save and seal what we have, then fail the run on purpose.
+  if (stopped) {
+    saveState(STATE_PATH, state);
+    commitState(`chore: stalled at EPUB chapter ${state.nextChapter}`);
+    log(stopped);
+    throw new InkstoneError(
+      `${stopped} at EPUB chapter ${state.nextChapter}. Everything published so far is saved and sealed, ` +
+        `so nothing is lost. The chain is stopped on purpose so it cannot spin forever; look at the last ` +
+        `chapter's error, fix it, then start publishing again from chapter ${state.nextChapter}.`,
+    );
+  }
 
   return { remaining, published, stopped, next: state.nextChapter, done: remaining === 0 };
 }
