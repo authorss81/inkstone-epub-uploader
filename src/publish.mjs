@@ -167,6 +167,10 @@ async function main() {
   const ACCOUNT = accountFor(target);
   const SESSION_PATH = sessionPathFor(target);
 
+  // Publish the account early: the seal step runs with `if: always()`, and if this run stops before
+  // the final summary it still has to know whose rotated token to save.
+  setOutput('account', ACCOUNT);
+
   log(`book "${target.title ?? BOOK_ID}" (id ${target.id}, bookId ${BOOK_ID})`);
   log(`books:\n${summary(config)}`);
 
