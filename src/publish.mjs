@@ -85,6 +85,10 @@ function describeExecError(err) {
 // In CI this is scripts/seal-and-push.sh, which re-encrypts the progress state (and this account's
 // rotated token) into the vault and pushes it. Locally, GIT_COMMIT=1 falls back to committing
 // ASSETS_DIR directly when it is a git checkout.
+// Which Inkstone account this run is publishing for. The progress hook needs it, and commitState is
+// module scope while the account is chosen per book, so the choice has to live up here.
+let ACCOUNT = '';
+
 function commitState(message) {
   const hook = process.env.PROGRESS_HOOK;
   if (hook) {
@@ -164,7 +168,7 @@ async function main() {
   const EPUB_PATH = epubPathFor(target);
   const STATE_PATH = statePathFor(target.bookId);
   const BOOK_ID = target.bookId;
-  const ACCOUNT = accountFor(target);
+  ACCOUNT = accountFor(target);
   const SESSION_PATH = sessionPathFor(target);
 
   // Publish the account early: the seal step runs with `if: always()`, and if this run stops before
@@ -340,6 +344,17 @@ async function main() {
         n += 1;
         if (published < MAX_CHAPTERS && n <= end && DELAY_SECONDS > 0) await sleep(DELAY_SECONDS * 1000);
       } catch (err) {
+        // The site already holds this chapter's content. Skipping it is not a loss: the last attempt
+        // published it even though the page gave no success signal, and the duplicate check is what
+        // proves it. Without this the run stopped dead at book 27 chapter 34 with the chapter live.
+        if (err?.duplicate) {
+          log(`chapter ${n} is already on the site (Inkstone reports a duplicate), stepping over it`);
+          failures = 0;
+          state.nextChapter = n + 1;
+          saveState(STATE_PATH, state);
+          n += 1;
+          continue;
+        }
         failures += 1;
         warn(`chapter ${n} failed: ${err.message}`);
         await inkstone.saveSession().catch(() => {});

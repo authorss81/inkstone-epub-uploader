@@ -622,9 +622,15 @@ export class Inkstone {
     );
     if (blocked) {
       await this.snapshot(`publish-blocked-${chapter.index}`);
-      throw new InkstoneError(
+      const failure = new InkstoneError(
         `Inkstone refused the publish. On-page message: ${bodyText.replace(/\s+/g, ' ').slice(0, 400)}`,
       );
+      // "duplicates with last chapter" means the content is already on the site: an earlier attempt
+      // did go through even though the page looked unchanged, or the source EPUB repeats a chapter.
+      // Either way there is nothing left to publish here, so let the caller step over it instead of
+      // retrying into the same refusal and stalling the whole queue.
+      failure.duplicate = /duplicat\w*\s+with\s+(the\s+)?last/i.test(bodyText);
+      throw failure;
     }
   }
 }
