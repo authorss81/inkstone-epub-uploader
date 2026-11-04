@@ -228,6 +228,20 @@
       "title": "The Lotus and the Furnace",
       "epub": "book/book-37292579800427705.epub.enc",
       "account": "third"
+    },
+    {
+      "id": 34,
+      "bookId": "37299137200564705",
+      "title": "Wuxia_Fusion-_The_Golden_Ranking_Emerges,_My_Immortal_Identity_is_Exposed!_english_v5",
+      "epub": "book/book-37299137200564705.epub.enc",
+      "account": "third"
+    },
+    {
+      "id": 35,
+      "bookId": "37299170808459605",
+      "title": "Dual Cultivation",
+      "epub": "book/book-37299170808459605.epub.enc",
+      "account": "third"
     }
   ]
 }
